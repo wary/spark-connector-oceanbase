@@ -3,7 +3,7 @@ stages:
 
 variables:
   MAVEN_IMAGE: "maven:3.8.8-eclipse-temurin-8"
-  MAVEN_SETTINGS_PATH: "/Volumes/Work/SynologyDrive/m2/settings.xml"
+  MAVEN_SETTINGS_PATH: "settings.xml"
   MUSIC_VERSION: "1.5-MUSIC-SNAPSHOT"
   MAVEN_CLI_OPTS: "-B -U -ntp"
   MAVEN_DEPLOY_OPTS: "-DskipTests -Dgpg.skip=true"
