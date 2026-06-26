@@ -18,7 +18,7 @@ deploy:music-maven:
   stage: deploy
   image: "${MAVEN_IMAGE}"
   rules:
-    - if: '$CI_COMMIT_BRANCH == "gitlab/music-main"'
+    - if: '$CI_COMMIT_BRANCH == "music-main"'
   script:
     - test -f "${MAVEN_SETTINGS_PATH}"
     - >
