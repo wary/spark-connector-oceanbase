@@ -1,0 +1,31 @@
+stages:
+  - deploy
+
+variables:
+  MAVEN_IMAGE: "maven:3.8.8-eclipse-temurin-8"
+  MAVEN_SETTINGS_PATH: "/Volumes/Work/SynologyDrive/m2/settings.xml"
+  MUSIC_VERSION: "1.5-MUSIC-SNAPSHOT"
+  MAVEN_CLI_OPTS: "-B -U -ntp"
+  MAVEN_DEPLOY_OPTS: "-DskipTests -Dgpg.skip=true"
+  MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+
+cache:
+  key: "${CI_PROJECT_NAME}-maven"
+  paths:
+    - .m2/repository
+
+deploy:music-maven:
+  stage: deploy
+  image: "${MAVEN_IMAGE}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "gitlab/music-main"'
+  script:
+    - test -f "${MAVEN_SETTINGS_PATH}"
+    - >
+      mvn ${MAVEN_CLI_OPTS}
+      --settings "${MAVEN_SETTINGS_PATH}"
+      clean deploy
+      -Drevision="${MUSIC_VERSION}"
+      ${MAVEN_DEPLOY_OPTS}
+      -DaltReleaseDeploymentRepository=repo::default::http://mvn.hz.netease.com/artifactory/libs-releases
+      -DaltSnapshotDeploymentRepository=snapshots::default::http://mvn.hz.netease.com/artifactory/libs-snapshots
