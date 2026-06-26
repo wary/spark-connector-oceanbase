@@ -29,5 +29,4 @@ deploy:music-maven:
       -pl '!spark-connector-oceanbase-e2e-tests'
       -Drevision="${MUSIC_VERSION}"
       ${MAVEN_DEPLOY_OPTS}
-      -DaltReleaseDeploymentRepository=repo::default::http://mvn.hz.netease.com/artifactory/libs-releases
-      -DaltSnapshotDeploymentRepository=snapshots::default::http://mvn.hz.netease.com/artifactory/libs-snapshots
+      -DaltDeploymentRepository=snapshots::default::http://mvn.hz.netease.com/artifactory/libs-snapshots
