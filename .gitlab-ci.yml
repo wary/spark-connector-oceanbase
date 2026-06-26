@@ -6,7 +6,7 @@ variables:
   MAVEN_SETTINGS_PATH: "settings.xml"
   MUSIC_VERSION: "1.5-MUSIC-SNAPSHOT"
   MAVEN_CLI_OPTS: "-B -U -ntp"
-  MAVEN_DEPLOY_OPTS: "-DskipTests -Dgpg.skip=true -Drat.skip=true"
+  MAVEN_DEPLOY_OPTS: "-DskipTests -Dgpg.skip=true -Drat.skip=true -DskipPublishing=true"
   MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
 
 cache:
