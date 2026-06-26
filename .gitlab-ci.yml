@@ -25,6 +25,7 @@ deploy:music-maven:
       mvn ${MAVEN_CLI_OPTS}
       --settings "${MAVEN_SETTINGS_PATH}"
       clean deploy
+      -pl '!spark-connector-oceanbase-e2e-tests'
       -Drevision="${MUSIC_VERSION}"
       ${MAVEN_DEPLOY_OPTS}
       -DaltReleaseDeploymentRepository=repo::default::http://mvn.hz.netease.com/artifactory/libs-releases
