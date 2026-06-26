@@ -23,6 +23,13 @@ deploy:music-maven:
     - test -f "${MAVEN_SETTINGS_PATH}"
     - sed -i '/<!-- Central Publishing Plugin for Maven Central -->/,/<\/plugin>/d' pom.xml
     - >
+      perl -0pi -e
+      's/\n\s*<plugin>\s*<groupId>org\.apache\.maven\.plugins<\/groupId>\s*<artifactId>maven-source-plugin<\/artifactId>.*?<\/plugin>//sg;
+       s/\n\s*<plugin>\s*<groupId>org\.apache\.maven\.plugins<\/groupId>\s*<artifactId>maven-javadoc-plugin<\/artifactId>.*?<\/plugin>//sg;
+       s/\n\s*<execution>\s*<id>test-jar<\/id>.*?<\/execution>//sg;
+       s/\n\s*<execution>\s*<id>empty-javadoc-jar<\/id>.*?<\/execution>//sg;'
+      pom.xml
+    - >
       mvn ${MAVEN_CLI_OPTS}
       --settings "${MAVEN_SETTINGS_PATH}"
       clean deploy
