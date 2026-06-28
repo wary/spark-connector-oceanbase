@@ -20,7 +20,7 @@ object BuiltInDialectCompat {
 
   def load(className: String): JdbcDialect = {
     val dialectClass = Class.forName(className)
-    moduleInstance(dialectClass).getOrElse {
+    moduleInstance(dialectClass).orElse(moduleInstance(Class.forName(className + "$"))).getOrElse {
       val companion = Class.forName(className + "$").getField("MODULE$").get(null)
       companion.getClass.getMethod("apply").invoke(companion).asInstanceOf[JdbcDialect]
     }
