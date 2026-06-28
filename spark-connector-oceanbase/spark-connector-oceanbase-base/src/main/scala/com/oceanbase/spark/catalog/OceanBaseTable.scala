@@ -40,7 +40,7 @@ import scala.util.{Failure, Success, Try}
 
 case class OceanBaseTable(
     ident: Identifier,
-    schema: StructType,
+    override val schema: StructType,
     config: OceanBaseConfig,
     dialect: OceanBaseDialect)
   extends Table
