@@ -37,6 +37,7 @@ jobs:
       maven_opts: "-D spark_version=${{ matrix.spark_version }}"
 
   e2e-tests-scala-2_11:
+    if: github.ref != 'refs/heads/spark4' && github.head_ref != 'spark4'
     strategy:
       matrix:
         spark_version: ["2.4.6"]
