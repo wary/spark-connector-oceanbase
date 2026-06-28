@@ -24,6 +24,10 @@ under the License.
     <artifactId>spark-connector-oceanbase-e2e-tests</artifactId>
     <name>Spark Connector OceanBase E2E Tests</name>
 
+    <properties>
+        <skip.default.connector.copy>false</skip.default.connector.copy>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.scala-lang</groupId>

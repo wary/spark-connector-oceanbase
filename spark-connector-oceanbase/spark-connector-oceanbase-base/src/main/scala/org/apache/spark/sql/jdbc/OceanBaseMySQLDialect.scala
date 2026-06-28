@@ -36,41 +36,44 @@ import java.util.Locale
  */
 case object OceanBaseMySQLDialect extends JdbcDialect {
 
+  private lazy val delegate: JdbcDialect =
+    BuiltInDialectCompat.load("org.apache.spark.sql.jdbc.MySQLDialect")
+
   override def canHandle(url: String): Boolean =
     url.toLowerCase(Locale.ROOT).startsWith("jdbc:oceanbase") || url
       .toLowerCase(Locale.ROOT)
       .startsWith("jdbc:mysql")
 
   override def isSupportedFunction(funcName: String): Boolean =
-    MySQLDialect.isSupportedFunction(funcName)
+    delegate.isSupportedFunction(funcName)
 
   override def compileExpression(expr: Expression): Option[String] =
-    MySQLDialect.compileExpression(expr)
+    delegate.compileExpression(expr)
 
   override def getCatalystType(
       sqlType: Int,
       typeName: String,
       size: Int,
       md: MetadataBuilder): Option[DataType] =
-    MySQLDialect.getCatalystType(sqlType, typeName, size, md)
+    delegate.getCatalystType(sqlType, typeName, size, md)
 
-  override def quoteIdentifier(colName: String): String = MySQLDialect.quoteIdentifier(colName)
+  override def quoteIdentifier(colName: String): String = delegate.quoteIdentifier(colName)
 
   override def schemasExists(conn: Connection, options: JDBCOptions, schema: String): Boolean =
-    MySQLDialect.schemasExists(conn, options, schema)
+    delegate.schemasExists(conn, options, schema)
 
   override def listSchemas(conn: Connection, options: JDBCOptions): Array[Array[String]] =
-    MySQLDialect.listSchemas(conn, options)
+    delegate.listSchemas(conn, options)
 
-  override def getTableExistsQuery(table: String): String = MySQLDialect.getTableExistsQuery(table)
+  override def getTableExistsQuery(table: String): String = delegate.getTableExistsQuery(table)
 
-  override def isCascadingTruncateTable(): Option[Boolean] = MySQLDialect.isCascadingTruncateTable()
+  override def isCascadingTruncateTable(): Option[Boolean] = delegate.isCascadingTruncateTable()
 
   override def getUpdateColumnTypeQuery(
       tableName: String,
       columnName: String,
       newDataType: String): String =
-    MySQLDialect.getUpdateColumnTypeQuery(tableName, columnName, newDataType)
+    delegate.getUpdateColumnTypeQuery(tableName, columnName, newDataType)
 
   override def getRenameColumnQuery(
       tableName: String,
@@ -83,18 +86,18 @@ case object OceanBaseMySQLDialect extends JdbcDialect {
       tableName: String,
       columnName: String,
       isNullable: Boolean): String =
-    MySQLDialect.getUpdateColumnNullabilityQuery(tableName, columnName, isNullable)
+    delegate.getUpdateColumnNullabilityQuery(tableName, columnName, isNullable)
 
   override def getTableCommentQuery(table: String, comment: String): String =
-    MySQLDialect.getTableCommentQuery(table, comment)
+    delegate.getTableCommentQuery(table, comment)
 
-  override def getJDBCType(dt: DataType): Option[JdbcType] = MySQLDialect.getJDBCType(dt)
+  override def getJDBCType(dt: DataType): Option[JdbcType] = delegate.getJDBCType(dt)
 
   override def getSchemaCommentQuery(schema: String, comment: String): String =
-    MySQLDialect.getSchemaCommentQuery(schema, comment)
+    delegate.getSchemaCommentQuery(schema, comment)
 
   override def removeSchemaCommentQuery(schema: String): String =
-    MySQLDialect.removeSchemaCommentQuery(schema)
+    delegate.removeSchemaCommentQuery(schema)
 
   override def createIndex(
       indexName: String,
@@ -102,26 +105,26 @@ case object OceanBaseMySQLDialect extends JdbcDialect {
       columns: Array[NamedReference],
       columnsProperties: util.Map[NamedReference, util.Map[String, String]],
       properties: util.Map[String, String]): String =
-    MySQLDialect.createIndex(indexName, tableIdent, columns, columnsProperties, properties)
+    delegate.createIndex(indexName, tableIdent, columns, columnsProperties, properties)
 
   override def indexExists(
       conn: Connection,
       indexName: String,
       tableIdent: Identifier,
       options: JDBCOptions): Boolean =
-    MySQLDialect.indexExists(conn, indexName, tableIdent, options)
+    delegate.indexExists(conn, indexName, tableIdent, options)
 
   override def dropIndex(indexName: String, tableIdent: Identifier): String =
-    MySQLDialect.dropIndex(indexName, tableIdent)
+    delegate.dropIndex(indexName, tableIdent)
 
   override def listIndexes(
       conn: Connection,
       tableIdent: Identifier,
-      options: JDBCOptions): Array[TableIndex] = MySQLDialect.listIndexes(conn, tableIdent, options)
+      options: JDBCOptions): Array[TableIndex] = delegate.listIndexes(conn, tableIdent, options)
 
   override def classifyException(message: String, e: Throwable): AnalysisException =
-    MySQLDialect.classifyException(message, e)
+    delegate.classifyException(message, e)
 
   override def dropSchema(schema: String, cascade: Boolean): String =
-    MySQLDialect.dropSchema(schema, cascade)
+    delegate.dropSchema(schema, cascade)
 }
