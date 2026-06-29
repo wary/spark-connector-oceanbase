@@ -15,45 +15,33 @@ under the License.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>com.oceanbase</groupId>
-        <artifactId>spark-connector-oceanbase</artifactId>
+        <artifactId>spark-connector-obkv-hbase</artifactId>
         <version>${revision}</version>
     </parent>
 
-    <artifactId>spark-connector-oceanbase-2.4_${scala.binary.version}</artifactId>
-    <name>spark-connector-oceanbase-2.4</name>
+    <artifactId>spark-connector-obkv-hbase-4.1_${scala.binary.version}</artifactId>
+    <name>spark-connector-obkv-hbase-4.1</name>
 
     <properties>
-        <spark2.version>2.4.8</spark2.version>
+        <scala.version>2.13.15</scala.version>
+        <scala.binary.version>2.13</scala.binary.version>
+        <spark.version>4.1.1</spark.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>com.oceanbase</groupId>
-            <artifactId>spark-connector-oceanbase-base</artifactId>
-            <version>${project.version}</version>
+            <artifactId>spark-connector-obkv-hbase-base</artifactId>
+            <version>${revision}</version>
         </dependency>
 
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
-            <version>${spark2.version}</version>
+            <version>${spark.version}</version>
             <exclusions>
-                <exclusion>
-                    <groupId>org.apache.avro</groupId>
-                    <artifactId>avro</artifactId>
-                </exclusion>
-                <!-- The Jackson dependencies of Spark 2.4.8 have vulnerabilities. -->
-                <exclusion>
-                    <groupId>com.fasterxml.jackson.core</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>com.fasterxml.jackson.module</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
                 <exclusion>
                     <groupId>log4j</groupId>
                     <artifactId>log4j</artifactId>
@@ -61,14 +49,6 @@ under the License.
                 <exclusion>
                     <groupId>org.slf4j</groupId>
                     <artifactId>slf4j-log4j12</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.apache.xbean</groupId>
-                    <artifactId>xbean-asm6-shaded</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.glassfish.jersey.media</groupId>
-                    <artifactId>jersey-media-json-jackson</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -89,18 +69,30 @@ under the License.
                         <configuration>
                             <artifactSet>
                                 <includes combine.children="append">
+                                    <include>com.oceanbase:*</include>
                                     <include>com.alibaba:*</include>
-                                    <include>com.oceanbase:spark-connector-oceanbase-common</include>
-                                    <include>com.oceanbase:spark-connector-oceanbase-base</include>
-                                    <include>com.oceanbase:obkv-table-client</include>
-                                    <include>com.alipay.sofa:bolt</include>
-                                    <include>com.alipay.sofa.common:sofa-common-tools</include>
+                                    <include>com.alipay.*:*</include>
+                                    <include>com.google.*:*</include>
+                                    <include>org.apache.hadoop*:*</include>
+                                    <include>org.apache.hbase*:*</include>
+                                    <include>mysql:mysql-connector-java</include>
+                                    <!-- This is only needed for Spark 3.3 and above. -->
+                                    <include>com.lmax:disruptor</include>
                                 </includes>
                             </artifactSet>
+                            <relocations>
+                                <relocation>
+                                    <!-- Resolve dependency conflicts in direct-load API.
+                                         This is only needed for Spark 3.4. -->
+                                    <pattern>org.apache.logging</pattern>
+                                    <shadedPattern>shade.org.apache.logging</shadedPattern>
+                                </relocation>
+                            </relocations>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
         </plugins>
     </build>
+
 </project>

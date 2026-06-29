@@ -50,4 +50,19 @@ under the License.
             <version>2.0.0</version>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>scala-2.13</id>
+            <activation>
+                <property>
+                    <name>scala.binary.version</name>
+                    <value>2.13</value>
+                </property>
+            </activation>
+            <modules>
+                <module>spark-connector-oceanbase-4.1</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>

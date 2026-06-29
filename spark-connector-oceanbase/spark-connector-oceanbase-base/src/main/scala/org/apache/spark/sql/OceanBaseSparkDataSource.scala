@@ -21,9 +21,10 @@ import com.oceanbase.spark.utils.{OBJdbcUtils, OceanBaseSourceUtils}
 import com.oceanbase.spark.utils.OBJdbcUtils.{getCompatibleMode, getDbTable}
 import com.oceanbase.spark.writer.DirectLoadWriter
 
-import OceanBaseSparkDataSource.{buildJDBCOptions, isQueryRead, writeDataViaDirectLoad, JDBC_TXN_ISOLATION_LEVEL, JDBC_URL, JDBC_USER, OCEANBASE_DEFAULT_ISOLATION_LEVEL, SHORT_NAME}
+import OceanBaseSparkDataSource.{buildJDBCOptions, isQueryRead, resolver, sessionLocalTimeZone, writeDataViaDirectLoad, JDBC_TXN_ISOLATION_LEVEL, JDBC_URL, JDBC_USER, OCEANBASE_DEFAULT_ISOLATION_LEVEL, SHORT_NAME}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql
+import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.connector.catalog.{SupportsRead, Table => ConnectorTable, TableCapability, TableProvider}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.connector.read.{Scan, ScanBuilder, SupportsPushDownFilters, SupportsPushDownRequiredColumns, V1Scan}
@@ -67,10 +68,12 @@ class OceanBaseSparkDataSource extends JdbcRelationProvider with TableProvider {
       parameters: Map[String, String]): BaseRelation = {
     val oceanBaseConfig = new OceanBaseConfig(parameters.asJava)
     val jdbcOptions = buildJDBCOptions(parameters, oceanBaseConfig)._1
-    val resolver = sqlContext.conf.resolver
-    val timeZoneId = sqlContext.conf.sessionLocalTimeZone
-    val schema = JDBCRelation.getSchema(resolver, jdbcOptions)
-    val parts = JDBCRelation.columnPartition(schema, resolver, timeZoneId, jdbcOptions)
+    val schema = JDBCRelation.getSchema(resolver(sqlContext.sparkSession), jdbcOptions)
+    val parts = JDBCRelation.columnPartition(
+      schema,
+      resolver(sqlContext.sparkSession),
+      sessionLocalTimeZone(sqlContext.sparkSession),
+      jdbcOptions)
     new OceanBaseJDBCRelation(schema, parts, jdbcOptions)(sqlContext.sparkSession)
   }
 
@@ -107,7 +110,7 @@ object OceanBaseSparkDataSource {
     val parameters = options.asCaseSensitiveMap().asScala.toMap
     val oceanBaseConfig = new OceanBaseConfig(parameters.asJava)
     val jdbcOptions = buildJDBCOptions(parameters, oceanBaseConfig)._1
-    JDBCRelation.getSchema(SparkSession.active.sqlContext.conf.resolver, jdbcOptions)
+    JDBCRelation.getSchema(resolver(SparkSession.active), jdbcOptions)
   }
 
   def buildV1Relation(
@@ -116,11 +119,18 @@ object OceanBaseSparkDataSource {
     val session = SparkSession.active
     val oceanBaseConfig = new OceanBaseConfig(parameters.asJava)
     val jdbcOptions = buildJDBCOptions(parameters, oceanBaseConfig)._1
-    val resolver = session.sqlContext.conf.resolver
-    val timeZoneId = session.sqlContext.conf.sessionLocalTimeZone
-    val parts = JDBCRelation.columnPartition(schema, resolver, timeZoneId, jdbcOptions)
+    val parts = JDBCRelation.columnPartition(
+      schema,
+      resolver(session),
+      sessionLocalTimeZone(session),
+      jdbcOptions)
     new OceanBaseJDBCRelation(schema, parts, jdbcOptions)(session)
   }
+
+  def resolver(session: SparkSession): Resolver = session.sessionState.conf.resolver
+
+  def sessionLocalTimeZone(session: SparkSession): String =
+    session.sessionState.conf.sessionLocalTimeZone
 
   def buildJDBCOptions(
       parameters: Map[String, String],
@@ -180,7 +190,7 @@ object OceanBaseSparkDataSource {
   }
 }
 
-case class OceanBaseLegacyTable(schema: StructType, parameters: Map[String, String])
+case class OceanBaseLegacyTable(override val schema: StructType, parameters: Map[String, String])
   extends ConnectorTable
   with SupportsRead {
 

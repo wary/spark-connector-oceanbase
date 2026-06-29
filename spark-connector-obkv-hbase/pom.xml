@@ -61,4 +61,19 @@ under the License.
             </exclusions>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>scala-2.13</id>
+            <activation>
+                <property>
+                    <name>scala.binary.version</name>
+                    <value>2.13</value>
+                </property>
+            </activation>
+            <modules>
+                <module>spark-connector-obkv-hbase-4.1</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>

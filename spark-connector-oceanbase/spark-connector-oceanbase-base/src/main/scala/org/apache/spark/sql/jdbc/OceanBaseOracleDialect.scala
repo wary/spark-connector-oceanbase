@@ -27,28 +27,31 @@ import java.util.Locale
  */
 case object OceanBaseOracleDialect extends JdbcDialect {
 
+  private lazy val delegate: JdbcDialect =
+    BuiltInDialectCompat.load("org.apache.spark.sql.jdbc.OracleDialect")
+
   override def canHandle(url: String): Boolean =
     url.toLowerCase(Locale.ROOT).startsWith("jdbc:oceanbase")
 
   override def isSupportedFunction(funcName: String): Boolean =
-    OracleDialect.isSupportedFunction(funcName)
+    delegate.isSupportedFunction(funcName)
 
   override def compileExpression(expr: Expression): Option[String] =
-    OracleDialect.compileExpression(expr)
+    delegate.compileExpression(expr)
 
   override def getCatalystType(
       sqlType: Int,
       typeName: String,
       size: Int,
       md: MetadataBuilder): Option[DataType] =
-    OracleDialect.getCatalystType(sqlType, typeName, size, md)
+    delegate.getCatalystType(sqlType, typeName, size, md)
 
-  override def getJDBCType(dt: DataType): Option[JdbcType] = OracleDialect.getJDBCType(dt)
+  override def getJDBCType(dt: DataType): Option[JdbcType] = delegate.getJDBCType(dt)
 
-  override def compileValue(value: Any): Any = OracleDialect.compileValue(value)
+  override def compileValue(value: Any): Any = delegate.compileValue(value)
 
   override def isCascadingTruncateTable(): Option[Boolean] =
-    OracleDialect.isCascadingTruncateTable()
+    delegate.isCascadingTruncateTable()
 
   /**
    * The SQL query used to truncate a table.
@@ -63,20 +66,20 @@ case object OceanBaseOracleDialect extends JdbcDialect {
   override def getTruncateQuery(
       table: String,
       cascade: Option[Boolean] = isCascadingTruncateTable()): String =
-    OracleDialect.getTruncateQuery(table, cascade)
+    delegate.getTruncateQuery(table, cascade)
 
   override def getAddColumnQuery(tableName: String, columnName: String, dataType: String): String =
-    OracleDialect.getAddColumnQuery(tableName, columnName, dataType)
+    delegate.getAddColumnQuery(tableName, columnName, dataType)
 
   override def getUpdateColumnTypeQuery(
       tableName: String,
       columnName: String,
       newDataType: String): String =
-    OracleDialect.getUpdateColumnTypeQuery(tableName, columnName, newDataType)
+    delegate.getUpdateColumnTypeQuery(tableName, columnName, newDataType)
 
   override def getUpdateColumnNullabilityQuery(
       tableName: String,
       columnName: String,
       isNullable: Boolean): String =
-    OracleDialect.getUpdateColumnNullabilityQuery(tableName, columnName, isNullable)
+    delegate.getUpdateColumnNullabilityQuery(tableName, columnName, isNullable)
 }
