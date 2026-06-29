@@ -1,8 +1,10 @@
 stages:
   - deploy
+  - deploy-spark4
 
 variables:
   MAVEN_IMAGE: "maven:3.8.8-eclipse-temurin-8"
+  MAVEN_SPARK4_IMAGE: "maven:3.9.9-eclipse-temurin-17"
   MAVEN_SETTINGS_PATH: "settings.xml"
   MUSIC_VERSION: "1.5-MUSIC-SNAPSHOT"
   MAVEN_CLI_OPTS: "-B -U -ntp"
@@ -29,5 +31,27 @@ deploy:music-maven:
       clean deploy
       -pl '!spark-connector-oceanbase-e2e-tests'
       -Drevision="${MUSIC_VERSION}"
+      ${MAVEN_DEPLOY_OPTS}
+      -DaltDeploymentRepository=snapshots::default::http://mvn.hz.netease.com/artifactory/libs-snapshots
+
+deploy:music-maven-spark4:
+  stage: deploy-spark4
+  image: "${MAVEN_SPARK4_IMAGE}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "music-main"'
+  script:
+    - test -f "${MAVEN_SETTINGS_PATH}"
+    - sed -i '/<!-- Central Publishing Plugin for Maven Central -->/,/<\/plugin>/d' pom.xml
+    - perl -0pi -e 's#\n\s*<plugin>\s*<groupId>org\.apache\.maven\.plugins</groupId>\s*<artifactId>maven-source-plugin</artifactId>.*?</plugin>##sg; s#\n\s*<plugin>\s*<groupId>org\.apache\.maven\.plugins</groupId>\s*<artifactId>maven-javadoc-plugin</artifactId>.*?</plugin>##sg; s#\n\s*<execution>\s*<id>test-jar</id>.*?</execution>##sg; s#\n\s*<execution>\s*<id>empty-javadoc-jar</id>.*?</execution>##sg;' pom.xml
+    - >
+      mvn ${MAVEN_CLI_OPTS}
+      --settings "${MAVEN_SETTINGS_PATH}"
+      clean deploy
+      -Drevision="${MUSIC_VERSION}"
+      -Dscala.version=2.13.15
+      -Dscala.binary.version=2.13
+      -Dspark.version=4.1.1
+      -pl spark-connector-oceanbase/spark-connector-oceanbase-4.1,spark-connector-obkv-hbase/spark-connector-obkv-hbase-4.1
+      -am
       ${MAVEN_DEPLOY_OPTS}
       -DaltDeploymentRepository=snapshots::default::http://mvn.hz.netease.com/artifactory/libs-snapshots
