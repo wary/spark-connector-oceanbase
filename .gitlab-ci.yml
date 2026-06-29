@@ -38,7 +38,7 @@ deploy:music-maven-spark4:
   stage: deploy-spark4
   image: "${MAVEN_SPARK4_IMAGE}"
   tags:
-    - java17
+    - jdk17
   rules:
     - if: '$CI_COMMIT_BRANCH == "music-main"'
   script:
