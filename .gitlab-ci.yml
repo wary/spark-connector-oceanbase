@@ -37,9 +37,12 @@ deploy:music-maven:
 deploy:music-maven-spark4:
   stage: deploy-spark4
   image: "${MAVEN_SPARK4_IMAGE}"
+  tags:
+    - java17
   rules:
     - if: '$CI_COMMIT_BRANCH == "music-main"'
   script:
+    - export JAVA_HOME=/usr/lib/jvm/jdk-17.0.15+6
     - test -f "${MAVEN_SETTINGS_PATH}"
     - sed -i '/<!-- Central Publishing Plugin for Maven Central -->/,/<\/plugin>/d' pom.xml
     - perl -0pi -e 's#\n\s*<plugin>\s*<groupId>org\.apache\.maven\.plugins</groupId>\s*<artifactId>maven-source-plugin</artifactId>.*?</plugin>##sg; s#\n\s*<plugin>\s*<groupId>org\.apache\.maven\.plugins</groupId>\s*<artifactId>maven-javadoc-plugin</artifactId>.*?</plugin>##sg; s#\n\s*<execution>\s*<id>test-jar</id>.*?</execution>##sg; s#\n\s*<execution>\s*<id>empty-javadoc-jar</id>.*?</execution>##sg;' pom.xml
