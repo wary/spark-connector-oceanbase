@@ -29,7 +29,7 @@ deploy:music-maven:
       mvn ${MAVEN_CLI_OPTS}
       --settings "${MAVEN_SETTINGS_PATH}"
       clean deploy
-      -pl '!spark-connector-oceanbase-e2e-tests'
+      -pl '!spark-connector-oceanbase-e2e-tests,!spark-connector-oceanbase/spark-connector-oceanbase-4.1,!spark-connector-obkv-hbase/spark-connector-obkv-hbase-4.1'
       -Drevision="${MUSIC_VERSION}"
       ${MAVEN_DEPLOY_OPTS}
       -DaltDeploymentRepository=snapshots::default::http://mvn.hz.netease.com/artifactory/libs-snapshots
