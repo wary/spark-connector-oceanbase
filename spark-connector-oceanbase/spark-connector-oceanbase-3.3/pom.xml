@@ -32,7 +32,7 @@ under the License.
     <dependencies>
         <dependency>
             <groupId>com.oceanbase</groupId>
-            <artifactId>spark-connector-oceanbase-base</artifactId>
+            <artifactId>spark-connector-oceanbase-base_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
         </dependency>
 
@@ -40,6 +40,7 @@ under the License.
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark.version}</version>
+            <scope>provided</scope>
             <exclusions>
                 <exclusion>
                     <groupId>log4j</groupId>
@@ -70,7 +71,7 @@ under the License.
                                 <includes combine.children="append">
                                     <include>com.alibaba:*</include>
                                     <include>com.oceanbase:spark-connector-oceanbase-common</include>
-                                    <include>com.oceanbase:spark-connector-oceanbase-base</include>
+                                    <include>com.oceanbase:spark-connector-oceanbase-base_${scala.binary.version}</include>
                                     <include>com.oceanbase:obkv-table-client</include>
                                     <include>com.alipay.sofa:bolt</include>
                                     <include>com.alipay.sofa.common:sofa-common-tools</include>

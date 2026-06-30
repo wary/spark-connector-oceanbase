@@ -22,7 +22,7 @@ under the License.
         <version>${revision}</version>
     </parent>
 
-    <artifactId>spark-connector-oceanbase-base</artifactId>
+    <artifactId>spark-connector-oceanbase-base_${scala.binary.version}</artifactId>
 
     <packaging>jar</packaging>
     <name>spark-connector-oceanbase-base</name>
@@ -51,6 +51,7 @@ under the License.
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark.version}</version>
+            <scope>provided</scope>
             <exclusions>
                 <exclusion>
                     <groupId>log4j</groupId>
@@ -264,6 +265,13 @@ under the License.
                             <file>${project.basedir}/../../.scalafmt.conf</file>
                         </scalafmt>
                     </scala>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <configuration>
+                    <flattenMode>ossrh</flattenMode>
                 </configuration>
             </plugin>
         </plugins>
