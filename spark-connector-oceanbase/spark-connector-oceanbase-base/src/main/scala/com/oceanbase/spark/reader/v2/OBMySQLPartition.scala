@@ -211,6 +211,7 @@ object OBMySQLPartition extends Logging {
          |  and TABLE_NAME = '${config.getTableName}';
          |""".stripMargin
     try {
+      logInfo(s"Executing SQL for partition info: $sql")
       val rs = statement.executeQuery(sql)
       while (rs.next()) {
         arrayBuilder += OBPartInfo(
@@ -275,6 +276,7 @@ object OBMySQLPartition extends Logging {
       s"SELECT /*+ PARALLEL(${config.getJdbcStatsParallelHintDegree}) ${queryTimeoutHint(
           config)} */ count(1) AS cnt FROM $tableName $partName"
     try {
+      logInfo(s"Executing SQL for count: $sql")
       val rs = statement.executeQuery(sql)
       if (rs.next())
         rs.getLong(1)
@@ -436,6 +438,7 @@ object OBMySQLPartition extends Logging {
              """
       }
     try {
+      logInfo(s"Executing SQL for int primary key table info: $sql")
       val rs = statement.executeQuery(sql)
       if (rs.next())
         if (useApprox) {
@@ -684,6 +687,7 @@ object OBMySQLPartition extends Logging {
     val statement = conn.prepareStatement(sql)
     try {
       statement.setObject(1, includedLowerBound)
+      logInfo(s"Executing SQL for next chunk max: $sql, param=$includedLowerBound")
       val rs = statement.executeQuery()
       if (rs.next())
         rs.getObject(1)
@@ -713,6 +717,7 @@ object OBMySQLPartition extends Logging {
     val statement = conn.prepareStatement(sql)
     try {
       statement.setObject(1, includedLowerBound)
+      logInfo(s"Executing SQL for query min: $sql, param=$includedLowerBound")
       val rs = statement.executeQuery()
       if (rs.next())
         rs.getObject(1)
@@ -750,6 +755,7 @@ object OBMySQLPartition extends Logging {
              """
       }
     try {
+      logInfo(s"Executing SQL for unevenly primary key table info: $sql")
       val rs = statement.executeQuery(sql)
       if (rs.next())
         if (useApprox) {

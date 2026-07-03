@@ -108,6 +108,7 @@ object OBOraclePartition extends Logging {
          |""".stripMargin
 
     val subPartitions = ArrayBuffer[OBOraclePartInfo]()
+    logInfo(s"Executing SQL for partition info: $subPartSql")
     OBJdbcUtils.executeQuery(connection, config, subPartSql) {
       rs =>
         while (rs.next()) {
@@ -135,6 +136,7 @@ object OBOraclePartition extends Logging {
          |""".stripMargin
 
     val partitions = ArrayBuffer[OBOraclePartInfo]()
+    logInfo(s"Executing SQL for partition info: $partSql")
     OBJdbcUtils.executeQuery(connection, config, partSql) {
       rs =>
         while (rs.next()) {
@@ -159,6 +161,7 @@ object OBOraclePartition extends Logging {
       s"SELECT /*+ PARALLEL(${config.getJdbcStatsParallelHintDegree}) ${queryTimeoutHint(
           config)} */ count(1) AS cnt FROM $tableName $partName"
     try {
+      logInfo(s"Executing SQL for count: $sql")
       val rs = statement.executeQuery(sql)
       if (rs.next()) rs.getLong(1)
       else throw new RuntimeException(s"Failed to obtain count of $tableName.")
@@ -271,6 +274,7 @@ object OBOraclePartition extends Logging {
           .format(normalizePkNameForSql(priKeyColumnName), normalizePkNameForSql(priKeyColumnName))
       }
     try {
+      logInfo(s"Executing SQL for int primary key table info: $sql")
       val rs = statement.executeQuery(sql)
       if (rs.next()) {
         if (useApprox) {
@@ -366,6 +370,7 @@ object OBOraclePartition extends Logging {
           .format(normalizePkNameForSql(priKeyColumnName), normalizePkNameForSql(priKeyColumnName))
       }
     try {
+      logInfo(s"Executing SQL for unevenly primary key table info: $sql")
       val rs = statement.executeQuery(sql)
       if (rs.next())
         if (useApprox) {
@@ -559,6 +564,7 @@ object OBOraclePartition extends Logging {
     val statement = conn.prepareStatement(finalSql)
     try {
       statement.setObject(1, includedLowerBound)
+      logInfo(s"Executing SQL for next chunk max: $finalSql, param=$includedLowerBound")
       val rs = statement.executeQuery()
       if (rs.next()) rs.getObject(1)
       else throw new RuntimeException("Failed to query next chunk max.")

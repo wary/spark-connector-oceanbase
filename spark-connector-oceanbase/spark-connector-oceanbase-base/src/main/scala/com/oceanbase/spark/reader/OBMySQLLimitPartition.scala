@@ -21,6 +21,7 @@ import com.oceanbase.spark.config.OceanBaseConfig
 import com.oceanbase.spark.utils.OBJdbcUtils
 
 import org.apache.spark.Partition
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.jdbc.JDBCOptions
 
 import java.util.Objects
@@ -34,7 +35,7 @@ case class OBMySQLLimitPartition(partitionClause: String, limitOffsetClause: Str
   override def index: Int = idx
 }
 
-object OBMySQLLimitPartition {
+object OBMySQLLimitPartition extends Logging {
 
   private val EMPTY_STRING = ""
   private val PARTITION_QUERY_FORMAT = "PARTITION(%s)"
@@ -78,6 +79,7 @@ object OBMySQLLimitPartition {
                |  and TABLE_NAME = '${jdbcOptions.parameters(OceanBaseConfig.TABLE_NAME.getKey)}';
                |""".stripMargin
           try {
+            logInfo(s"Executing SQL for partition info: $sql")
             val rs = statement.executeQuery(sql)
             while (rs.next()) {
               arrayBuilder += OBPartInfo(
@@ -144,6 +146,7 @@ object OBMySQLLimitPartition {
           val tableName = jdbcOptions.parameters(JDBCOptions.JDBC_TABLE_NAME)
           val sql = s"SELECT count(1) AS cnt FROM $tableName $partName"
           try {
+            logInfo(s"Executing SQL for count: $sql")
             val rs = statement.executeQuery(sql)
             if (rs.next())
               rs.getLong(1)
