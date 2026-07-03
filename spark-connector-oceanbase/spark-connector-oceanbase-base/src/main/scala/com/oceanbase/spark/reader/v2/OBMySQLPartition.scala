@@ -80,11 +80,17 @@ object OBMySQLPartition extends Logging {
               val priKeyColumnName = configPartitionColumn.orElse(priKeyColInfos.head.columnName)
               whereUnevenlySizedPartitionWay(connection, config, obPartInfos, priKeyColumnName)
             } else {
+              // For non-partitioned tables, pass TABLE_ROWS as approximate count
+              val approxCount =
+                if (obPartInfos.length == 1 && Objects.isNull(obPartInfos(0).partName))
+                  obPartInfos(0).tableRows
+                else -1L
               val info = obtainIntPriKeyTableInfo(
                 connection,
                 config,
                 EMPTY_STRING,
-                finalIntPriKey.columnName)
+                finalIntPriKey.columnName,
+                approxCount)
               val priKeyDepth = info.max - info.min
               // Check the uniformity of the integer primary key value distribution. TODO：Refine logic of Check the uniformity
               if ((priKeyDepth >= info.count * 2) || (priKeyDepth * 2 <= info.count)) {
@@ -114,7 +120,7 @@ object OBMySQLPartition extends Logging {
       obPartInfos: Array[OBPartInfo]) = {
     if (obPartInfos.length == 1 && Objects.isNull(obPartInfos(0).partName)) {
       // For non-partition table
-      computeOffsetLimitPartInfoForNonPartTable(connection, config)
+      computeOffsetLimitPartInfoForNonPartTable(connection, config, obPartInfos(0).tableRows)
     } else {
       // For partition table
       computeForOffsetLimitPartInfoForPartTable(connection, config, obPartInfos)
@@ -128,7 +134,11 @@ object OBMySQLPartition extends Logging {
       priKeyColumnName: String) = {
     if (obPartInfos.length == 1 && Objects.isNull(obPartInfos(0).partName)) {
       // For non-partition table
-      computeWherePartInfoForNonPartTable(connection, config, priKeyColumnName)
+      computeWherePartInfoForNonPartTable(
+        connection,
+        config,
+        priKeyColumnName,
+        obPartInfos(0).tableRows)
     } else {
       // For partition table
       computeWherePartInfoForPartTable(connection, config, obPartInfos, priKeyColumnName)
@@ -143,7 +153,11 @@ object OBMySQLPartition extends Logging {
 
     if (obPartInfos.length == 1 && Objects.isNull(obPartInfos(0).partName)) {
       // For non-partition table
-      computeUnevenlyWherePartInfoForNonPartTable(connection, config, priKeyColumnName)
+      computeUnevenlyWherePartInfoForNonPartTable(
+        connection,
+        config,
+        priKeyColumnName,
+        obPartInfos(0).tableRows)
     } else {
       // For partition table
       computeUnevenlyWherePartInfoForPartTable(config, obPartInfos, priKeyColumnName)
@@ -189,7 +203,7 @@ object OBMySQLPartition extends Logging {
     val sql =
       s"""
          |select
-         |  TABLE_SCHEMA, TABLE_NAME, PARTITION_NAME, SUBPARTITION_NAME
+         |  TABLE_SCHEMA, TABLE_NAME, PARTITION_NAME, SUBPARTITION_NAME, TABLE_ROWS
          |from
          |  information_schema.partitions
          |where
@@ -203,7 +217,8 @@ object OBMySQLPartition extends Logging {
           rs.getString(1),
           rs.getString(2),
           rs.getString(3),
-          rs.getString(4))
+          rs.getString(4),
+          rs.getLong(5))
       }
     } finally {
       statement.close()
@@ -214,8 +229,11 @@ object OBMySQLPartition extends Logging {
 
   private def computeOffsetLimitPartInfoForNonPartTable(
       connection: Connection,
-      config: OceanBaseConfig): Array[InputPartition] = {
-    val count: Long = obtainCount(connection, config, EMPTY_STRING)
+      config: OceanBaseConfig,
+      approxTableRows: Long): Array[InputPartition] = {
+    val count: Long =
+      if (config.getUseApproximateRowCount) approxTableRows
+      else obtainCount(connection, config, EMPTY_STRING)
     require(count >= 0, "Total must be a positive number")
     computeQueryPart(count, EMPTY_STRING, config).asInstanceOf[Array[InputPartition]]
   }
@@ -231,7 +249,9 @@ object OBMySQLPartition extends Logging {
           case x if Objects.isNull(x) => PARTITION_QUERY_FORMAT.format(obPartInfo.partName)
           case _ => PARTITION_QUERY_FORMAT.format(obPartInfo.subPartName)
         }
-        val count = obtainCount(connection, config, partitionName)
+        val count =
+          if (config.getUseApproximateRowCount) obPartInfo.tableRows
+          else obtainCount(connection, config, partitionName)
         val partitions = computeQueryPart(count, partitionName, config)
         arr ++= partitions
       })
@@ -301,7 +321,12 @@ object OBMySQLPartition extends Logging {
           case _ => PARTITION_QUERY_FORMAT.format(obPartInfo.subPartName)
         }
         val keyTableInfo =
-          obtainIntPriKeyTableInfo(connection, config, partitionName, priKeyColumnName)
+          obtainIntPriKeyTableInfo(
+            connection,
+            config,
+            partitionName,
+            priKeyColumnName,
+            obPartInfo.tableRows)
         val partitions =
           computeWhereSparkPart(keyTableInfo, partitionName, priKeyColumnName, config)
         arr ++= partitions
@@ -371,9 +396,10 @@ object OBMySQLPartition extends Logging {
   private def computeWherePartInfoForNonPartTable(
       connection: Connection,
       config: OceanBaseConfig,
-      priKeyColumnName: String): Array[InputPartition] = {
+      priKeyColumnName: String,
+      approxCount: Long = -1L): Array[InputPartition] = {
     val priKeyColumnInfo =
-      obtainIntPriKeyTableInfo(connection, config, EMPTY_STRING, priKeyColumnName)
+      obtainIntPriKeyTableInfo(connection, config, EMPTY_STRING, priKeyColumnName, approxCount)
     if (priKeyColumnInfo.count <= 0) Array.empty
     computeWhereSparkPart(priKeyColumnInfo, EMPTY_STRING, priKeyColumnName, config)
       .asInstanceOf[Array[InputPartition]]
@@ -383,7 +409,8 @@ object OBMySQLPartition extends Logging {
       connection: Connection,
       config: OceanBaseConfig,
       partName: String,
-      priKeyColumnName: String) = {
+      priKeyColumnName: String,
+      approxCount: Long = -1L) = {
     val statement = connection.createStatement()
     val tableName = config.getDbTable
     val useHiddenPKColHint =
@@ -393,16 +420,29 @@ object OBMySQLPartition extends Logging {
     val hint =
       s"/*+ PARALLEL(${config.getJdbcStatsParallelHintDegree}) $useHiddenPKColHint ${queryTimeoutHint(config)} */"
 
+    val useApprox = config.getUseApproximateRowCount && approxCount >= 0
     val sql =
-      s"""
+      if (useApprox) {
+        s"""
+              SELECT $hint
+                min($priKeyColumnName), max($priKeyColumnName)
+              FROM $tableName $partName
+             """
+      } else {
+        s"""
               SELECT $hint
                 count(1) AS cnt, min($priKeyColumnName), max($priKeyColumnName)
               FROM $tableName $partName
              """
+      }
     try {
       val rs = statement.executeQuery(sql)
       if (rs.next())
-        IntPriKeyTableInfo(rs.getLong(1), rs.getLong(2), rs.getLong(3))
+        if (useApprox) {
+          IntPriKeyTableInfo(approxCount, rs.getLong(1), rs.getLong(2))
+        } else {
+          IntPriKeyTableInfo(rs.getLong(1), rs.getLong(2), rs.getLong(3))
+        }
       else
         throw new RuntimeException(s"Failed to obtain count of $tableName.")
     } finally {
@@ -417,9 +457,10 @@ object OBMySQLPartition extends Logging {
   private def computeUnevenlyWherePartInfoForNonPartTable(
       conn: Connection,
       config: OceanBaseConfig,
-      priKeyColumnName: String): Array[InputPartition] = {
+      priKeyColumnName: String,
+      approxCount: Long = -1L): Array[InputPartition] = {
     val unevenlyPriKeyTableInfo =
-      obtainUnevenlyPriKeyTableInfo(conn, config, EMPTY_STRING, priKeyColumnName)
+      obtainUnevenlyPriKeyTableInfo(conn, config, EMPTY_STRING, priKeyColumnName, approxCount)
     if (unevenlyPriKeyTableInfo.count <= 0)
       Array.empty
     else
@@ -456,7 +497,12 @@ object OBMySQLPartition extends Logging {
                 case _ => PARTITION_QUERY_FORMAT.format(obPartInfo.subPartName)
               }
               val unevenlyPriKeyTableInfo =
-                obtainUnevenlyPriKeyTableInfo(conn, config, partitionName, priKeyColumnName)
+                obtainUnevenlyPriKeyTableInfo(
+                  conn,
+                  config,
+                  partitionName,
+                  priKeyColumnName,
+                  obPartInfo.tableRows)
               val partitions =
                 computeUnevenlyWhereSparkPart(
                   conn,
@@ -681,21 +727,36 @@ object OBMySQLPartition extends Logging {
       conn: Connection,
       config: OceanBaseConfig,
       partName: String,
-      priKeyColumnName: String) = {
+      priKeyColumnName: String,
+      approxCount: Long = -1L) = {
     val statement = conn.createStatement()
     val tableName = config.getDbTable
     val hint =
       s"/*+ PARALLEL(${config.getJdbcStatsParallelHintDegree}) ${queryTimeoutHint(config)} */"
+
+    val useApprox = config.getUseApproximateRowCount && approxCount >= 0
     val sql =
-      s"""
+      if (useApprox) {
+        s"""
+              SELECT $hint
+                min($priKeyColumnName), max($priKeyColumnName)
+              FROM $tableName $partName
+             """
+      } else {
+        s"""
               SELECT $hint
                 count(1) AS cnt, min($priKeyColumnName), max($priKeyColumnName)
               FROM $tableName $partName
              """
+      }
     try {
       val rs = statement.executeQuery(sql)
       if (rs.next())
-        UnevenlyPriKeyTableInfo(rs.getLong(1), rs.getObject(2), rs.getObject(3))
+        if (useApprox) {
+          UnevenlyPriKeyTableInfo(approxCount, rs.getObject(1), rs.getObject(2))
+        } else {
+          UnevenlyPriKeyTableInfo(rs.getLong(1), rs.getObject(2), rs.getObject(3))
+        }
       else
         throw new RuntimeException(s"Failed to obtain count of $tableName.")
     } finally {
@@ -721,4 +782,9 @@ object OBMySQLPartition extends Logging {
   private case class UnevenlyPriKeyTableInfo(count: Long, min: Object, max: Object)
 }
 
-case class OBPartInfo(tableSchema: String, tableName: String, partName: String, subPartName: String)
+case class OBPartInfo(
+    tableSchema: String,
+    tableName: String,
+    partName: String,
+    subPartName: String,
+    tableRows: Long)
