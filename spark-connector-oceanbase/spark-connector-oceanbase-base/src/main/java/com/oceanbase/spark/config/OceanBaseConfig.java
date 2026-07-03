@@ -357,6 +357,17 @@ public class OceanBaseConfig extends Config implements Serializable {
                     .longConf()
                     .create();
 
+    public static final ConfigEntry<Boolean> JDBC_USE_APPROXIMATE_ROW_COUNT =
+            new ConfigBuilder("jdbc.use-approximate-row-count")
+                    .doc(
+                            "When true, use TABLE_ROWS from information_schema.PARTITIONS (approximate, O(1)) "
+                                    + "instead of executing SELECT count(1) (exact, full table scan) for partition "
+                                    + "size estimation. Approximate counts are sufficient for partition planning "
+                                    + "and dramatically faster on large tables. Set to false to revert to exact counts.")
+                    .version(ConfigConstants.VERSION_1_4_0)
+                    .booleanConf()
+                    .createWithDefault(true);
+
     public static final ConfigEntry<Boolean> JDBC_ENABLE_PUSH_DOWN_LIMIT =
             new ConfigBuilder("jdbc.enable-pushdown-limit")
                     .doc("Whether to enable pushdown of LIMIT clause to OceanBase.")
@@ -676,6 +687,10 @@ public class OceanBaseConfig extends Config implements Serializable {
 
     public Optional<Long> getJdbcMaxRecordsPrePartition() {
         return Optional.ofNullable(get(JDBC_MAX_RECORDS_PER_PARTITION));
+    }
+
+    public Boolean getUseApproximateRowCount() {
+        return get(JDBC_USE_APPROXIMATE_ROW_COUNT);
     }
 
     public Optional<String> getJdbcReaderPartitionColumn(OceanBaseDialect dialect) {
