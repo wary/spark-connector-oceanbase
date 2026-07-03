@@ -235,8 +235,7 @@ object OBMySQLPartition extends Logging {
         logInfo(
           s"Using approximate row count from information_schema.partitions.TABLE_ROWS for table ${config.getDbTable}: $approxTableRows")
         approxTableRows
-      }
-      else obtainCount(connection, config, EMPTY_STRING)
+      } else obtainCount(connection, config, EMPTY_STRING)
     require(count >= 0, "Total must be a positive number")
     computeQueryPart(count, EMPTY_STRING, config).asInstanceOf[Array[InputPartition]]
   }
@@ -257,8 +256,7 @@ object OBMySQLPartition extends Logging {
             logInfo(
               s"Using approximate row count from information_schema.partitions.TABLE_ROWS for table ${config.getDbTable} $partitionName: ${obPartInfo.tableRows}")
             obPartInfo.tableRows
-          }
-          else obtainCount(connection, config, partitionName)
+          } else obtainCount(connection, config, partitionName)
         val partitions = computeQueryPart(count, partitionName, config)
         arr ++= partitions
       })
