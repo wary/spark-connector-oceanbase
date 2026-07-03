@@ -55,6 +55,10 @@ object OBOraclePartition extends Logging {
       .withConnection(config) {
         connection =>
           val obPartInfos: Array[OBOraclePartInfo] = obtainPartInfo(connection, config)
+          val approxCount =
+            if (config.getUseApproximateRowCount && obPartInfos.isEmpty)
+              obtainTableRows(connection, config)
+            else -1L
 
           val priKeyColInfos =
             dialect.getPriKeyInfo(connection, config.getSchemaName, config.getTableName, config)
@@ -62,7 +66,11 @@ object OBOraclePartition extends Logging {
           if (priKeyColInfos == null || priKeyColInfos.isEmpty) {
             // Non-primary key table: use hidden pk column evenly sized where partitioning
             if (obPartInfos.isEmpty) {
-              computeWherePartInfoForNonPartTable(connection, config, HIDDEN_PK_INCREMENT)
+              computeWherePartInfoForNonPartTable(
+                connection,
+                config,
+                HIDDEN_PK_INCREMENT,
+                approxCount)
             } else {
               computeWherePartInfoForPartTable(connection, config, obPartInfos, HIDDEN_PK_INCREMENT)
             }
@@ -74,9 +82,17 @@ object OBOraclePartition extends Logging {
 
             if (obPartInfos.isEmpty) {
               if (isNumericType(numericPriKey)) {
-                computeWherePartInfoForNonPartTable(connection, config, priKeyColumnName)
+                computeWherePartInfoForNonPartTable(
+                  connection,
+                  config,
+                  priKeyColumnName,
+                  approxCount)
               } else {
-                computeUnevenlyWherePartInfoForNonPartTable(connection, config, priKeyColumnName)
+                computeUnevenlyWherePartInfoForNonPartTable(
+                  connection,
+                  config,
+                  priKeyColumnName,
+                  approxCount)
               }
             } else {
               if (isNumericType(numericPriKey)) {
@@ -151,6 +167,34 @@ object OBOraclePartition extends Logging {
     partitions.toArray
   }
 
+  private def obtainTableRows(connection: Connection, config: OceanBaseConfig): Long = {
+    val sql =
+      s"""
+         |SELECT
+         |  NUM_ROWS
+         |FROM
+         |  ALL_TABLES
+         |WHERE
+         |  OWNER = '${config.getSchemaName}'
+         |  AND TABLE_NAME = '${config.getTableName}'
+         |""".stripMargin
+
+    var tableRows = -1L
+    logInfo(s"Executing SQL for table rows: $sql")
+    OBJdbcUtils.executeQuery(connection, config, sql) {
+      rs =>
+        if (rs.next()) {
+          tableRows = rs.getLong("NUM_ROWS")
+          if (rs.wasNull()) {
+            tableRows = -1L
+          }
+        }
+    }
+    logInfo(
+      s"Using approximate row count from ALL_TABLES.NUM_ROWS for table ${config.getDbTable}: $tableRows")
+    tableRows
+  }
+
   private def obtainCount(
       connection: Connection,
       config: OceanBaseConfig,
@@ -194,10 +238,11 @@ object OBOraclePartition extends Logging {
   private def computeWherePartInfoForNonPartTable(
       connection: Connection,
       config: OceanBaseConfig,
-      priKeyColumnName: String): Array[InputPartition] = {
+      priKeyColumnName: String,
+      approxCount: Long = -1L): Array[InputPartition] = {
     val pkForSql = normalizePkNameForSql(priKeyColumnName)
     val priKeyColumnInfo =
-      obtainIntPriKeyTableInfo(connection, config, EMPTY_STRING, pkForSql)
+      obtainIntPriKeyTableInfo(connection, config, EMPTY_STRING, pkForSql, approxCount)
     if (priKeyColumnInfo.count <= 0) Array.empty
     computeWhereSparkPart(priKeyColumnInfo, EMPTY_STRING, pkForSql, config)
       .asInstanceOf[Array[InputPartition]]
@@ -257,6 +302,10 @@ object OBOraclePartition extends Logging {
       s"/*+ PARALLEL(${config.getJdbcStatsParallelHintDegree}) $useHiddenPKColHint ${queryTimeoutHint(config)} */"
 
     val useApprox = config.getUseApproximateRowCount && approxCount >= 0
+    if (useApprox) {
+      logInfo(
+        s"Using approximate row count for int primary key table info of ${config.getDbTable} $partName: $approxCount")
+    }
     val sql =
       if (useApprox) {
         s"""
@@ -353,6 +402,10 @@ object OBOraclePartition extends Logging {
       s"/*+ PARALLEL(${config.getJdbcStatsParallelHintDegree}) ${queryTimeoutHint(config)} */"
 
     val useApprox = config.getUseApproximateRowCount && approxCount >= 0
+    if (useApprox) {
+      logInfo(
+        s"Using approximate row count for unevenly primary key table info of ${config.getDbTable} $partName: $approxCount")
+    }
     val sql =
       if (useApprox) {
         s"""

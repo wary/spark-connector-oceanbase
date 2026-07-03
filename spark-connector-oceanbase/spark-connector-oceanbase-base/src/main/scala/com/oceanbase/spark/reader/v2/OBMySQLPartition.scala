@@ -80,11 +80,9 @@ object OBMySQLPartition extends Logging {
               val priKeyColumnName = configPartitionColumn.orElse(priKeyColInfos.head.columnName)
               whereUnevenlySizedPartitionWay(connection, config, obPartInfos, priKeyColumnName)
             } else {
-              // For non-partitioned tables, pass TABLE_ROWS as approximate count
-              val approxCount =
-                if (obPartInfos.length == 1 && Objects.isNull(obPartInfos(0).partName))
-                  obPartInfos(0).tableRows
-                else -1L
+              val approxCount = obPartInfos.map(_.tableRows).sum
+              logInfo(
+                s"Using approximate row count from information_schema.partitions.TABLE_ROWS for table ${config.getDbTable}: $approxCount")
               val info = obtainIntPriKeyTableInfo(
                 connection,
                 config,
@@ -233,7 +231,11 @@ object OBMySQLPartition extends Logging {
       config: OceanBaseConfig,
       approxTableRows: Long): Array[InputPartition] = {
     val count: Long =
-      if (config.getUseApproximateRowCount) approxTableRows
+      if (config.getUseApproximateRowCount) {
+        logInfo(
+          s"Using approximate row count from information_schema.partitions.TABLE_ROWS for table ${config.getDbTable}: $approxTableRows")
+        approxTableRows
+      }
       else obtainCount(connection, config, EMPTY_STRING)
     require(count >= 0, "Total must be a positive number")
     computeQueryPart(count, EMPTY_STRING, config).asInstanceOf[Array[InputPartition]]
@@ -251,7 +253,11 @@ object OBMySQLPartition extends Logging {
           case _ => PARTITION_QUERY_FORMAT.format(obPartInfo.subPartName)
         }
         val count =
-          if (config.getUseApproximateRowCount) obPartInfo.tableRows
+          if (config.getUseApproximateRowCount) {
+            logInfo(
+              s"Using approximate row count from information_schema.partitions.TABLE_ROWS for table ${config.getDbTable} $partitionName: ${obPartInfo.tableRows}")
+            obPartInfo.tableRows
+          }
           else obtainCount(connection, config, partitionName)
         val partitions = computeQueryPart(count, partitionName, config)
         arr ++= partitions
@@ -423,6 +429,10 @@ object OBMySQLPartition extends Logging {
       s"/*+ PARALLEL(${config.getJdbcStatsParallelHintDegree}) $useHiddenPKColHint ${queryTimeoutHint(config)} */"
 
     val useApprox = config.getUseApproximateRowCount && approxCount >= 0
+    if (useApprox) {
+      logInfo(
+        s"Using approximate row count for int primary key table info of ${config.getDbTable} $partName: $approxCount")
+    }
     val sql =
       if (useApprox) {
         s"""
@@ -740,6 +750,10 @@ object OBMySQLPartition extends Logging {
       s"/*+ PARALLEL(${config.getJdbcStatsParallelHintDegree}) ${queryTimeoutHint(config)} */"
 
     val useApprox = config.getUseApproximateRowCount && approxCount >= 0
+    if (useApprox) {
+      logInfo(
+        s"Using approximate row count for unevenly primary key table info of ${config.getDbTable} $partName: $approxCount")
+    }
     val sql =
       if (useApprox) {
         s"""
