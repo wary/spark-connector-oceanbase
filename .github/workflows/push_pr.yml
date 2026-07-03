@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - main
+      - spark4
       - 'release-*'
 
 concurrency:
@@ -36,13 +37,15 @@ jobs:
       maven_opts: "-D spark_version=${{ matrix.spark_version }}"
 
   e2e-tests-scala-2_11:
+    if: github.ref != 'refs/heads/spark4' && github.head_ref != 'spark4'
     strategy:
       matrix:
         spark_version: ["2.4.6"]
     uses: ./.github/workflows/test.yml
     with:
       module: spark-connector-oceanbase-e2e-tests
-      maven_opts: "-D skipTests -D spark_version=${{ matrix.spark_version }} -D scala.version=2.11.12 -D scala.binary.version=2.11"
+      build_opts: "-D skipTests -D spark_version=${{ matrix.spark_version }} -D spark.version=${{ matrix.spark_version }} -D scala.version=2.11.12 -D scala.binary.version=2.11 -D skip.default.connector.copy=true -pl spark-connector-oceanbase/spark-connector-oceanbase-2.4,spark-connector-obkv-hbase/spark-connector-obkv-hbase-2.4,spark-connector-oceanbase-e2e-tests -am"
+      maven_opts: "-D skipTests -D spark_version=${{ matrix.spark_version }} -D spark.version=${{ matrix.spark_version }} -D scala.version=2.11.12 -D scala.binary.version=2.11 -D skip.default.connector.copy=true"
 
   e2e-tests-scala-2_13:
     strategy:
@@ -51,5 +54,13 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       module: spark-connector-oceanbase-e2e-tests
-      maven_opts: "-D skipTests -D spark_version=${{ matrix.spark_version }} -D scala.version=2.13.15 -D scala.binary.version=2.13"
+      build_opts: "-D skipTests -D spark_version=${{ matrix.spark_version }} -D spark.version=${{ matrix.spark_version }} -D scala.version=2.13.15 -D scala.binary.version=2.13 -D skip.default.connector.copy=true -pl spark-connector-oceanbase/spark-connector-oceanbase-3.5,spark-connector-obkv-hbase/spark-connector-obkv-hbase-3.5,spark-connector-oceanbase-e2e-tests -am"
+      maven_opts: "-D skipTests -D spark_version=${{ matrix.spark_version }} -D spark.version=${{ matrix.spark_version }} -D scala.version=2.13.15 -D scala.binary.version=2.13 -D skip.default.connector.copy=true"
 
+  e2e-tests-spark-4_1:
+    uses: ./.github/workflows/test.yml
+    with:
+      module: spark-connector-oceanbase-e2e-tests
+      java_version: "17"
+      build_opts: "-D scala.version=2.13.15 -D scala.binary.version=2.13 -D spark.version=4.1.1 -D skip.default.connector.copy=true -pl spark-connector-oceanbase/spark-connector-oceanbase-4.1,spark-connector-obkv-hbase/spark-connector-obkv-hbase-4.1,spark-connector-oceanbase-e2e-tests -am"
+      maven_opts: "-D spark_version=4.1.1 -D scala.version=2.13.15 -D scala.binary.version=2.13 -D spark.version=4.1.1 -D skip.default.connector.copy=true"

@@ -235,6 +235,30 @@ public class OceanBaseConfig extends Config implements Serializable {
                     .checkValue(value -> value >= 0, ConfigConstants.POSITIVE_NUMBER_ERROR_MSG)
                     .createWithDefault(1024);
 
+    public static final ConfigEntry<Integer> JDBC_CONNECTION_MAX_RETRIES =
+            new ConfigBuilder("jdbc.connection.max-retries")
+                    .doc(
+                            "Maximum number of attempts when opening a JDBC connection, including the initial attempt.")
+                    .version(ConfigConstants.VERSION_1_4_0)
+                    .intConf()
+                    .checkValue(value -> value > 0, ConfigConstants.POSITIVE_NUMBER_ERROR_MSG)
+                    .createWithDefault(3);
+
+    public static final ConfigEntry<Duration> JDBC_CONNECTION_RETRY_INTERVAL =
+            new ConfigBuilder("jdbc.connection.retry-interval")
+                    .doc("Initial retry interval when opening a JDBC connection.")
+                    .version(ConfigConstants.VERSION_1_4_0)
+                    .durationConf()
+                    .createWithDefault(Duration.ofSeconds(1));
+
+    public static final ConfigEntry<Duration> JDBC_CONNECTION_FAILED_URL_COOLDOWN =
+            new ConfigBuilder("jdbc.connection.failed-url-cooldown")
+                    .doc(
+                            "Cooldown before a JDBC URL that failed to connect is treated as healthy again.")
+                    .version(ConfigConstants.VERSION_1_4_0)
+                    .durationConf()
+                    .createWithDefault(Duration.ofSeconds(60));
+
     public static final ConfigEntry<Boolean> JDBC_ENABLE_AUTOCOMMIT =
             new ConfigBuilder("jdbc.enable-autocommit")
                     .doc("Declare whether to enable autocommit when writing data using JDBC.")
@@ -332,6 +356,17 @@ public class OceanBaseConfig extends Config implements Serializable {
                     .version(ConfigConstants.VERSION_1_1_0)
                     .longConf()
                     .create();
+
+    public static final ConfigEntry<Boolean> JDBC_USE_APPROXIMATE_ROW_COUNT =
+            new ConfigBuilder("jdbc.use-approximate-row-count")
+                    .doc(
+                            "When true, use TABLE_ROWS from information_schema.PARTITIONS (approximate, O(1)) "
+                                    + "instead of executing SELECT count(1) (exact, full table scan) for partition "
+                                    + "size estimation. Approximate counts are sufficient for partition planning "
+                                    + "and dramatically faster on large tables. Set to false to revert to exact counts.")
+                    .version(ConfigConstants.VERSION_1_4_0)
+                    .booleanConf()
+                    .createWithDefault(true);
 
     public static final ConfigEntry<Boolean> JDBC_ENABLE_PUSH_DOWN_LIMIT =
             new ConfigBuilder("jdbc.enable-pushdown-limit")
@@ -542,6 +577,18 @@ public class OceanBaseConfig extends Config implements Serializable {
         return get(JDBC_BATCH_SIZE);
     }
 
+    public Integer getJdbcConnectionMaxRetries() {
+        return get(JDBC_CONNECTION_MAX_RETRIES);
+    }
+
+    public long getJdbcConnectionRetryIntervalMillis() {
+        return get(JDBC_CONNECTION_RETRY_INTERVAL).toMillis();
+    }
+
+    public long getJdbcConnectionFailedUrlCooldownMillis() {
+        return get(JDBC_CONNECTION_FAILED_URL_COOLDOWN).toMillis();
+    }
+
     public Boolean getJdbcEnableAutoCommit() {
         return get(JDBC_ENABLE_AUTOCOMMIT);
     }
@@ -640,6 +687,10 @@ public class OceanBaseConfig extends Config implements Serializable {
 
     public Optional<Long> getJdbcMaxRecordsPrePartition() {
         return Optional.ofNullable(get(JDBC_MAX_RECORDS_PER_PARTITION));
+    }
+
+    public Boolean getUseApproximateRowCount() {
+        return get(JDBC_USE_APPROXIMATE_ROW_COUNT);
     }
 
     public Optional<String> getJdbcReaderPartitionColumn(OceanBaseDialect dialect) {

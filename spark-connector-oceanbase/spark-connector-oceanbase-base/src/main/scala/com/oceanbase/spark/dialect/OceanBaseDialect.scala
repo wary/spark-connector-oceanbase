@@ -223,12 +223,6 @@ abstract class OceanBaseDialect extends Logging with Serializable {
       quoteIdentifier(namedRef.fieldNames.head)
     }
 
-    override def visitCast(l: String, dataType: DataType): String = {
-      val databaseTypeDefinition =
-        getJDBCType(dataType).map(_.databaseTypeDefinition).getOrElse(dataType.typeName)
-      s"CAST($l AS $databaseTypeDefinition)"
-    }
-
     override def visitSQLFunction(funcName: String, inputs: Array[String]): String = {
       if (isSupportedFunction(funcName)) {
         s"""${dialectFunctionName(funcName)}(${inputs.mkString(", ")})"""

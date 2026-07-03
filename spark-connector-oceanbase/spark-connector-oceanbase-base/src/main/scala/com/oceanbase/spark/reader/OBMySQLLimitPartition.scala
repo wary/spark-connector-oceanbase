@@ -21,6 +21,7 @@ import com.oceanbase.spark.config.OceanBaseConfig
 import com.oceanbase.spark.utils.OBJdbcUtils
 
 import org.apache.spark.Partition
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.jdbc.JDBCOptions
 
 import java.util.Objects
@@ -34,7 +35,7 @@ case class OBMySQLLimitPartition(partitionClause: String, limitOffsetClause: Str
   override def index: Int = idx
 }
 
-object OBMySQLLimitPartition {
+object OBMySQLLimitPartition extends Logging {
 
   private val EMPTY_STRING = ""
   private val PARTITION_QUERY_FORMAT = "PARTITION(%s)"
@@ -46,7 +47,7 @@ object OBMySQLLimitPartition {
 
     if (obPartInfos.length == 1 && Objects.isNull(obPartInfos(0).partName)) {
       // For non-partition table
-      computeForNonPartTable(jdbcOptions)
+      computeForNonPartTable(jdbcOptions, obPartInfos(0).tableRows)
     } else {
       // For partition table
       computeForPartTable(jdbcOptions, obPartInfos)
@@ -70,7 +71,7 @@ object OBMySQLLimitPartition {
           val sql =
             s"""
                |select
-               |  TABLE_SCHEMA, TABLE_NAME, PARTITION_NAME, SUBPARTITION_NAME
+               |  TABLE_SCHEMA, TABLE_NAME, PARTITION_NAME, SUBPARTITION_NAME, TABLE_ROWS
                |from
                |  information_schema.partitions
                |where
@@ -78,13 +79,15 @@ object OBMySQLLimitPartition {
                |  and TABLE_NAME = '${jdbcOptions.parameters(OceanBaseConfig.TABLE_NAME.getKey)}';
                |""".stripMargin
           try {
+            logInfo(s"Executing SQL for partition info: $sql")
             val rs = statement.executeQuery(sql)
             while (rs.next()) {
               arrayBuilder += OBPartInfo(
                 rs.getString(1),
                 rs.getString(2),
                 rs.getString(3),
-                rs.getString(4))
+                rs.getString(4),
+                rs.getLong(5))
             }
           } finally {
             statement.close()
@@ -94,8 +97,16 @@ object OBMySQLLimitPartition {
     arrayBuilder.result()
   }
 
-  private def computeForNonPartTable(jdbcOptions: JDBCOptions): Array[Partition] = {
-    val count: Long = obtainCount(jdbcOptions, EMPTY_STRING)
+  private def computeForNonPartTable(
+      jdbcOptions: JDBCOptions,
+      approxTableRows: Long): Array[Partition] = {
+    val useApprox = jdbcOptions.parameters
+      .get(OceanBaseConfig.JDBC_USE_APPROXIMATE_ROW_COUNT.getKey)
+      .map(_.toBoolean)
+      .getOrElse(true)
+    val count: Long =
+      if (useApprox) approxTableRows
+      else obtainCount(jdbcOptions, EMPTY_STRING)
     require(count >= 0, "Total must be a positive number")
     computeQueryPart(count, EMPTY_STRING).asInstanceOf[Array[Partition]]
   }
@@ -104,13 +115,19 @@ object OBMySQLLimitPartition {
       jdbcOptions: JDBCOptions,
       obPartInfos: Array[OBPartInfo]): Array[Partition] = {
     val arr = new ArrayBuffer[OBMySQLLimitPartition]()
+    val useApprox = jdbcOptions.parameters
+      .get(OceanBaseConfig.JDBC_USE_APPROXIMATE_ROW_COUNT.getKey)
+      .map(_.toBoolean)
+      .getOrElse(true)
     obPartInfos.foreach(
       obPartInfo => {
         val partitionName = obPartInfo.subPartName match {
           case x if Objects.isNull(x) => PARTITION_QUERY_FORMAT.format(obPartInfo.partName)
           case _ => PARTITION_QUERY_FORMAT.format(obPartInfo.subPartName)
         }
-        val count = obtainCount(jdbcOptions, partitionName)
+        val count =
+          if (useApprox) obPartInfo.tableRows
+          else obtainCount(jdbcOptions, partitionName)
         val partitions = computeQueryPart(count, partitionName)
         arr ++= partitions
       })
@@ -129,6 +146,7 @@ object OBMySQLLimitPartition {
           val tableName = jdbcOptions.parameters(JDBCOptions.JDBC_TABLE_NAME)
           val sql = s"SELECT count(1) AS cnt FROM $tableName $partName"
           try {
+            logInfo(s"Executing SQL for count: $sql")
             val rs = statement.executeQuery(sql)
             if (rs.next())
               rs.getLong(1)
@@ -159,4 +177,9 @@ object OBMySQLLimitPartition {
   }
 }
 
-case class OBPartInfo(tableSchema: String, tableName: String, partName: String, subPartName: String)
+case class OBPartInfo(
+    tableSchema: String,
+    tableName: String,
+    partName: String,
+    subPartName: String,
+    tableRows: Long)

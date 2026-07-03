@@ -24,6 +24,10 @@ under the License.
     <artifactId>spark-connector-oceanbase-e2e-tests</artifactId>
     <name>Spark Connector OceanBase E2E Tests</name>
 
+    <properties>
+        <skip.default.connector.copy>false</skip.default.connector.copy>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.scala-lang</groupId>
@@ -262,6 +266,9 @@ under the License.
                             <goal>copy</goal>
                         </goals>
                         <phase>process-resources</phase>
+                        <configuration>
+                            <skip>${skip.default.connector.copy}</skip>
+                        </configuration>
                     </execution>
                     <execution>
                         <id>copy-mysql-connector</id>
@@ -327,4 +334,145 @@ under the License.
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>spark-2.4-e2e</id>
+            <activation>
+                <property>
+                    <name>spark_version</name>
+                    <value>2.4.6</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-spark-2.4-jars</id>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                                <phase>process-resources</phase>
+                                <configuration>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>com.oceanbase</groupId>
+                                            <artifactId>spark-connector-oceanbase-2.4_${scala.binary.version}</artifactId>
+                                            <version>${project.version}</version>
+                                            <destFileName>spark-connector-oceanbase-2.4_${scala.binary.version}-${project.version}.jar</destFileName>
+                                            <type>jar</type>
+                                            <outputDirectory>${project.build.directory}/dependencies</outputDirectory>
+                                        </artifactItem>
+                                        <artifactItem>
+                                            <groupId>com.oceanbase</groupId>
+                                            <artifactId>spark-connector-obkv-hbase-2.4_${scala.binary.version}</artifactId>
+                                            <version>${project.version}</version>
+                                            <destFileName>spark-connector-obkv-hbase-2.4_${scala.binary.version}-${project.version}.jar</destFileName>
+                                            <type>jar</type>
+                                            <outputDirectory>${project.build.directory}/dependencies</outputDirectory>
+                                        </artifactItem>
+                                    </artifactItems>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>spark-3.5-e2e</id>
+            <activation>
+                <property>
+                    <name>spark_version</name>
+                    <value>3.5.5</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-spark-3.5-jars</id>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                                <phase>process-resources</phase>
+                                <configuration>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>com.oceanbase</groupId>
+                                            <artifactId>spark-connector-oceanbase-3.5_${scala.binary.version}</artifactId>
+                                            <version>${project.version}</version>
+                                            <destFileName>spark-connector-oceanbase-3.5_${scala.binary.version}-${project.version}.jar</destFileName>
+                                            <type>jar</type>
+                                            <outputDirectory>${project.build.directory}/dependencies</outputDirectory>
+                                        </artifactItem>
+                                        <artifactItem>
+                                            <groupId>com.oceanbase</groupId>
+                                            <artifactId>spark-connector-obkv-hbase-3.5_${scala.binary.version}</artifactId>
+                                            <version>${project.version}</version>
+                                            <destFileName>spark-connector-obkv-hbase-3.5_${scala.binary.version}-${project.version}.jar</destFileName>
+                                            <type>jar</type>
+                                            <outputDirectory>${project.build.directory}/dependencies</outputDirectory>
+                                        </artifactItem>
+                                    </artifactItems>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>spark-4.1-e2e</id>
+            <activation>
+                <property>
+                    <name>spark_version</name>
+                    <value>4.1.1</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-spark-4.1-jars</id>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                                <phase>process-resources</phase>
+                                <configuration>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>com.oceanbase</groupId>
+                                            <artifactId>spark-connector-oceanbase-4.1_${scala.binary.version}</artifactId>
+                                            <version>${project.version}</version>
+                                            <destFileName>spark-connector-oceanbase-4.1_${scala.binary.version}-${project.version}.jar</destFileName>
+                                            <type>jar</type>
+                                            <outputDirectory>${project.build.directory}/dependencies</outputDirectory>
+                                        </artifactItem>
+                                        <artifactItem>
+                                            <groupId>com.oceanbase</groupId>
+                                            <artifactId>spark-connector-obkv-hbase-4.1_${scala.binary.version}</artifactId>
+                                            <version>${project.version}</version>
+                                            <destFileName>spark-connector-obkv-hbase-4.1_${scala.binary.version}-${project.version}.jar</destFileName>
+                                            <type>jar</type>
+                                            <outputDirectory>${project.build.directory}/dependencies</outputDirectory>
+                                        </artifactItem>
+                                    </artifactItems>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

@@ -401,6 +401,7 @@ under the License.
                         <exclude>**/.*/**</exclude>
                         <exclude>**/*.prefs</exclude>
                         <exclude>**/*.log</exclude>
+                        <exclude>settings.xml</exclude>
                         <!-- Administrative files in the main trunk. -->
                         <exclude>**/*.md</exclude>
                         <exclude>.github/**</exclude>
