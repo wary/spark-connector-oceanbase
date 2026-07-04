@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - main
+      - gitlab/main
       - spark4
       - 'release-*'
 
