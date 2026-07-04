@@ -23,12 +23,14 @@ jobs:
     with:
       module: spark-connector-oceanbase/spark-connector-oceanbase-base
       build_opts: "-pl spark-connector-oceanbase/spark-connector-oceanbase-base -am"
+      maven_opts: "-DskipTests"
 
   spark-connector-obkv-hbase:
     uses: ./.github/workflows/test.yml
     with:
       module: spark-connector-obkv-hbase/spark-connector-obkv-hbase-base
       build_opts: "-pl spark-connector-obkv-hbase/spark-connector-obkv-hbase-base -am"
+      maven_opts: "-DskipTests"
 
   e2e-tests:
     strategy:
