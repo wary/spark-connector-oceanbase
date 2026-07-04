@@ -16,7 +16,7 @@
 
 package com.oceanbase.spark
 
-import com.oceanbase.spark.OceanBaseCatalogE2eITCase.{MYSQL_CONNECTOR_JAVA, SINK_CONNECTOR_NAME}
+import com.oceanbase.spark.OceanBaseCatalogE2eITCase.{MYSQL_CONNECTOR_JAVA, SINK_CONNECTOR_NAME, SPARSE_IDS, SPARSE_PARTITION_PRODUCTS}
 import com.oceanbase.spark.OceanBaseTestBase.assertEqualsInAnyOrder
 import com.oceanbase.spark.utils.SparkContainerTestEnvironment
 import com.oceanbase.spark.utils.SparkContainerTestEnvironment.getResource
@@ -27,9 +27,15 @@ import org.junit.jupiter.api.function.ThrowingSupplier
 import org.slf4j.LoggerFactory
 import org.testcontainers.containers.output.Slf4jLogConsumer
 
+import java.sql.SQLException
 import java.util
 
+import scala.collection.mutable
+import scala.util.matching.Regex
+
 class OceanBaseCatalogE2eITCase extends SparkContainerTestEnvironment {
+  private val LOG = LoggerFactory.getLogger(classOf[OceanBaseCatalogE2eITCase])
+
   @BeforeEach
   @throws[Exception]
   override def before(): Unit = {
@@ -176,6 +182,66 @@ class OceanBaseCatalogE2eITCase extends SparkContainerTestEnvironment {
     matches = "^2\\.4\\.[0-9]$",
     disabledReason = "Catalog is only supported starting from Spark3."
   )
+  def testApproximateRowCountPartitionPlanning(): Unit = {
+    createSparsePartitionProducts()
+    try {
+      val sqlLines: util.List[String] = new util.ArrayList[String]
+      sqlLines.add(s"""
+                      |set spark.sql.catalog.ob=com.oceanbase.spark.catalog.OceanBaseCatalog;
+                      |set spark.sql.catalog.ob.url=$getJdbcUrlInContainer;
+                      |set spark.sql.catalog.ob.username=$getUsername;
+                      |set spark.sql.catalog.ob.password=$getPassword;
+                      |set `spark.sql.catalog.ob.schema-name`=$getSchemaName;
+                      |set `spark.sql.catalog.ob.jdbc.use-approximate-row-count`=true;
+                      |set `spark.sql.catalog.ob.jdbc.max-records-per-partition`=2;
+                      |set `spark.sql.catalog.ob.jdbc.num-partitions`=4;
+                      |set `spark.sql.catalog.ob.jdbc.bucket-multiplier`=2;
+                      |set spark.sql.defaultCatalog=ob;
+                      |""".stripMargin)
+      sqlLines.add(
+        s"""
+           |SELECT concat(cast(id AS string), ':', cast(spark_partition_id() AS string)) AS marker
+           |FROM $getSchemaName.$SPARSE_PARTITION_PRODUCTS;
+           |""".stripMargin)
+
+      val result =
+        submitSQLJobWithResult(
+          sqlLines,
+          getResource(SINK_CONNECTOR_NAME),
+          getResource(MYSQL_CONNECTOR_JAVA))
+      Assertions.assertEquals(0, result.getExitCode)
+
+      val combinedOutput = result.getStdout + "\n" + result.getStderr
+      val markers = extractPartitionMarkers(combinedOutput)
+      Assertions.assertEquals(SPARSE_IDS.toSet, markers.keySet)
+      Assertions.assertTrue(
+        markers.values.toSet.size > 1,
+        s"Expected bucket partition planning to use multiple Spark partitions, markers=$markers")
+
+      val capturedSql = captureSqlAudit()
+      if (capturedSql.nonEmpty) {
+        val executedSql = capturedSql.mkString("\n")
+        Assertions.assertTrue(
+          executedSql.toLowerCase.contains("information_schema.partitions"),
+          s"Expected partition planning to read approximate row counts from information_schema.partitions. SQL=$executedSql"
+        )
+        Assertions.assertFalse(
+          exactCountQueryPattern.findFirstIn(executedSql).isDefined,
+          s"Partition planning must not execute SELECT count(1) when approximate row count is enabled. SQL=$executedSql"
+        )
+      }
+    } finally {
+      dropTableIfExists(SPARSE_PARTITION_PRODUCTS)
+      disableSqlAudit()
+    }
+  }
+
+  @Test
+  @DisabledIfSystemProperty(
+    named = "spark_version",
+    matches = "^2\\.4\\.[0-9]$",
+    disabledReason = "Catalog is only supported starting from Spark3."
+  )
   def testCatalogOp(): Unit = {
     val sqlLines: util.List[String] = new util.ArrayList[String]
     sqlLines.add(s"""
@@ -203,10 +269,138 @@ class OceanBaseCatalogE2eITCase extends SparkContainerTestEnvironment {
 
   private def getUnavailableJdbcUrlInContainer: String =
     s"jdbc:mysql://127.0.0.1:1/$getSchemaName?useUnicode=true&characterEncoding=UTF-8&useSSL=false"
+
+  private def createSparsePartitionProducts(): Unit = {
+    resetSqlAudit()
+    val connection = getJdbcConnection
+    try {
+      val statement = connection.createStatement()
+      try {
+        statement.execute(s"DROP TABLE IF EXISTS $SPARSE_PARTITION_PRODUCTS")
+        statement.execute(s"""
+                             |CREATE TABLE $SPARSE_PARTITION_PRODUCTS (
+                             |  id BIGINT NOT NULL PRIMARY KEY,
+                             |  name VARCHAR(64) NOT NULL
+                             |)
+                             |""".stripMargin)
+        SPARSE_IDS.foreach {
+          id =>
+            statement.addBatch(
+              s"INSERT INTO $SPARSE_PARTITION_PRODUCTS(id, name) VALUES ($id, 'name_$id')")
+        }
+        statement.executeBatch()
+      } finally {
+        statement.close()
+      }
+    } finally {
+      connection.close()
+    }
+  }
+
+  private def resetSqlAudit(): Unit = {
+    try {
+      executeSqlAuditStatement("SET GLOBAL log_output = 'TABLE'")
+      executeSqlAuditStatement("SET GLOBAL general_log = 'OFF'")
+      executeSqlAuditStatement("TRUNCATE TABLE mysql.general_log")
+      executeSqlAuditStatement("SET GLOBAL general_log = 'ON'")
+    } catch {
+      case e: SQLException =>
+        LOG.warn(
+          "SQL audit through mysql.general_log is not available; skipping SQL-path assertions",
+          e)
+    }
+  }
+
+  private def disableSqlAudit(): Unit = {
+    try {
+      executeSqlAuditStatement("SET GLOBAL general_log = 'OFF'")
+    } catch {
+      case e: SQLException =>
+        LOG.warn("Failed to disable mysql.general_log after E2E test", e)
+    }
+  }
+
+  private def executeSqlAuditStatement(sql: String): Unit = {
+    val connection = getJdbcConnection
+    try {
+      val statement = connection.createStatement()
+      try {
+        statement.execute(sql)
+      } finally {
+        statement.close()
+      }
+    } finally {
+      connection.close()
+    }
+  }
+
+  private def captureSqlAudit(): Seq[String] = {
+    val connection = getJdbcConnection
+    try {
+      val statement = connection.createStatement()
+      try {
+        val rs = statement.executeQuery(
+          s"""
+             |SELECT argument
+             |FROM mysql.general_log
+             |WHERE command_type = 'Query'
+             |  AND (
+             |       lower(argument) LIKE '%${SPARSE_PARTITION_PRODUCTS.toLowerCase}%'
+             |    OR lower(argument) LIKE '%information_schema.partitions%'
+             |  )
+             |""".stripMargin)
+        val queries = mutable.ArrayBuffer[String]()
+        while (rs.next()) {
+          queries += rs.getString(1)
+        }
+        queries.toSeq
+      } finally {
+        statement.close()
+      }
+    } catch {
+      case e: SQLException =>
+        LOG.warn("Failed to read mysql.general_log; skipping SQL-path assertions", e)
+        Seq.empty
+    } finally {
+      connection.close()
+    }
+  }
+
+  private def dropTableIfExists(tableName: String): Unit = {
+    val connection = getJdbcConnection
+    try {
+      val statement = connection.createStatement()
+      try {
+        statement.execute(s"DROP TABLE IF EXISTS $tableName")
+      } finally {
+        statement.close()
+      }
+    } finally {
+      connection.close()
+    }
+  }
+
+  private def extractPartitionMarkers(output: String): Map[Long, Int] = {
+    val markerPattern: Regex = """^\s*\|?\s*(\d+):(\d+)\s*\|?\s*$""".r
+    val markers = mutable.LinkedHashMap.empty[Long, Int]
+    output.linesIterator.foreach {
+      case markerPattern(idText, partitionIdText) =>
+        val id = idText.toLong
+        if (SPARSE_IDS.contains(id)) markers.put(id, partitionIdText.toInt)
+      case _ =>
+    }
+    markers.toMap
+  }
+
+  private val exactCountQueryPattern: Regex =
+    s"(?is)select\\s*/\\*.*?\\*/\\s*count\\s*\\(\\s*1\\s*\\).*$SPARSE_PARTITION_PRODUCTS".r
 }
 
 object OceanBaseCatalogE2eITCase extends SparkContainerTestEnvironment {
   private val LOG = LoggerFactory.getLogger(classOf[OceanBaseE2eITCase])
+  val SPARSE_PARTITION_PRODUCTS = "sparse_partition_products"
+  val SPARSE_IDS = Seq(1L, 1000L, 2000L, 100000L, 100001L, 500000L, 900000L, 2000000L, 2000001L,
+    5000000L, 9000000L, 9000001L)
   private val SINK_CONNECTOR_NAME =
     "^.*spark-connector-oceanbase-\\d+\\.\\d+_\\d+\\.\\d+-[\\d\\.]+(?:-SNAPSHOT)?\\.jar$"
   private val MYSQL_CONNECTOR_JAVA = "mysql-connector-java.jar"

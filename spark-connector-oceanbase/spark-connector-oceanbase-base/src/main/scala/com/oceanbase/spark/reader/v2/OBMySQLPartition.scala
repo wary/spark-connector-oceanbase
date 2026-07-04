@@ -450,7 +450,12 @@ object OBMySQLPartition extends Logging {
       val rs = statement.executeQuery(sql)
       if (rs.next())
         if (useApprox) {
-          IntPriKeyTableInfo(approxCount, rs.getLong(1), rs.getLong(2))
+          val min = rs.getObject(1)
+          val max = rs.getObject(2)
+          IntPriKeyTableInfo(
+            effectiveApproxCount(approxCount, min, max, s"${config.getDbTable} $partName", config),
+            toLongValue(min),
+            toLongValue(max))
         } else {
           IntPriKeyTableInfo(rs.getLong(1), rs.getLong(2), rs.getLong(3))
         }
@@ -852,7 +857,12 @@ object OBMySQLPartition extends Logging {
       val rs = statement.executeQuery(sql)
       if (rs.next())
         if (useApprox) {
-          UnevenlyPriKeyTableInfo(approxCount, rs.getObject(1), rs.getObject(2))
+          val min = rs.getObject(1)
+          val max = rs.getObject(2)
+          UnevenlyPriKeyTableInfo(
+            effectiveApproxCount(approxCount, min, max, s"${config.getDbTable} $partName", config),
+            min,
+            max)
         } else {
           UnevenlyPriKeyTableInfo(rs.getLong(1), rs.getObject(2), rs.getObject(3))
         }
@@ -868,6 +878,35 @@ object OBMySQLPartition extends Logging {
       c1.asInstanceOf[Comparable[Any]].compareTo(c2)
     case _ =>
       obj1.toString.compareTo(obj2.toString)
+  }
+
+  private def effectiveApproxCount(
+      approxCount: Long,
+      min: Object,
+      max: Object,
+      context: String,
+      config: OceanBaseConfig) = {
+    if (approxCount > 0 || min == null || max == null) {
+      approxCount
+    } else {
+      val minValue = toLongValue(min)
+      val maxValue = toLongValue(max)
+      val rangeWidth = (maxValue - minValue + 1).max(1)
+      val planningCount =
+        if (config.getJdbcNumPartitions.isPresent) config.getJdbcNumPartitions.get().toLong
+        else if (rangeWidth <= 1024) rangeWidth
+        else 1L
+      logWarning(
+        s"Approximate row count is $approxCount for $context, but min/max show existing rows. " +
+          s"Using $planningCount as the minimum planning count to avoid skipping a non-empty table.")
+      planningCount
+    }
+  }
+
+  private def toLongValue(value: Object) = value match {
+    case null => 0L
+    case number: Number => number.longValue()
+    case other => new java.math.BigDecimal(other.toString).longValue()
   }
 
   def queryTimeoutHint(config: OceanBaseConfig): String = if (

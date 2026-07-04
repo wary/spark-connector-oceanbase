@@ -179,6 +179,14 @@ public abstract class SparkContainerTestEnvironment extends OceanBaseMySQLTestBa
      */
     public void submitSQLJob(List<String> sqlLines, Path... jars)
             throws IOException, InterruptedException {
+        Container.ExecResult execResult = submitSQLJobWithResult(sqlLines, jars);
+        if (execResult.getExitCode() != 0) {
+            throw new AssertionError("Failed when submitting the SQL job.");
+        }
+    }
+
+    public Container.ExecResult submitSQLJobWithResult(List<String> sqlLines, Path... jars)
+            throws IOException, InterruptedException {
         final List<String> commands = new ArrayList<>();
         Path script = new File(temporaryFolder.toFile(), UUID.randomUUID().toString()).toPath();
         Files.write(script, sqlLines);
@@ -202,9 +210,7 @@ public abstract class SparkContainerTestEnvironment extends OceanBaseMySQLTestBa
         Container.ExecResult execResult = sparkContainer.execInContainer("bash", "-c", command);
         LOG.info(execResult.getStdout());
         LOG.error(execResult.getStderr());
-        if (execResult.getExitCode() != 0) {
-            throw new AssertionError("Failed when submitting the SQL job.");
-        }
+        return execResult;
     }
 
     public void submitSparkShellJob(List<String> shellLines, Path... jars)
