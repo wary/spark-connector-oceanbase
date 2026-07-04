@@ -365,7 +365,7 @@ public class OceanBaseConfig extends Config implements Serializable {
                                     + "Applies to the bucket-based partition strategy for sparse or non-integer primary key tables.")
                     .version(ConfigConstants.VERSION_1_4_0)
                     .intConf()
-                    .checkValue(v -> v > 0, ConfigConstants.POSITIVE_NUMBER_ERROR_MSG)
+                    .checkValue(v -> v == null || v > 0, ConfigConstants.POSITIVE_NUMBER_ERROR_MSG)
                     .create();
 
     public static final ConfigEntry<Integer> JDBC_BUCKET_MULTIPLIER =
