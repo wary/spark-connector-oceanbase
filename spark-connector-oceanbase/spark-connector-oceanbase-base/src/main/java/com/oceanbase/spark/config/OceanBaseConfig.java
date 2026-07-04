@@ -357,6 +357,29 @@ public class OceanBaseConfig extends Config implements Serializable {
                     .longConf()
                     .create();
 
+    public static final ConfigEntry<Integer> JDBC_NUM_PARTITIONS =
+            new ConfigBuilder("jdbc.num-partitions")
+                    .doc(
+                            "Directly specifies the number of Spark partitions when reading from OceanBase. "
+                                    + "When set, overrides the partition count derived from jdbc.max-records-per-partition. "
+                                    + "Applies to the bucket-based partition strategy for sparse or non-integer primary key tables.")
+                    .version(ConfigConstants.VERSION_1_4_0)
+                    .intConf()
+                    .checkValue(v -> v > 0, ConfigConstants.POSITIVE_NUMBER_ERROR_MSG)
+                    .create();
+
+    public static final ConfigEntry<Integer> JDBC_BUCKET_MULTIPLIER =
+            new ConfigBuilder("jdbc.bucket-multiplier")
+                    .doc(
+                            "Controls the number of equal-width ID buckets used in the bucket-based partition strategy. "
+                                    + "The total number of buckets is numPartitions * bucket-multiplier. "
+                                    + "A larger value improves row-count balance across partitions at the cost of longer WHERE clauses. "
+                                    + "Only applies when sparse or non-integer primary key tables use the bucket-based partition path.")
+                    .version(ConfigConstants.VERSION_1_4_0)
+                    .intConf()
+                    .checkValue(v -> v > 0, ConfigConstants.POSITIVE_NUMBER_ERROR_MSG)
+                    .createWithDefault(10);
+
     public static final ConfigEntry<Boolean> JDBC_USE_APPROXIMATE_ROW_COUNT =
             new ConfigBuilder("jdbc.use-approximate-row-count")
                     .doc(
@@ -687,6 +710,14 @@ public class OceanBaseConfig extends Config implements Serializable {
 
     public Optional<Long> getJdbcMaxRecordsPrePartition() {
         return Optional.ofNullable(get(JDBC_MAX_RECORDS_PER_PARTITION));
+    }
+
+    public Optional<Integer> getJdbcNumPartitions() {
+        return Optional.ofNullable(get(JDBC_NUM_PARTITIONS));
+    }
+
+    public int getJdbcBucketMultiplier() {
+        return get(JDBC_BUCKET_MULTIPLIER);
     }
 
     public Boolean getUseApproximateRowCount() {

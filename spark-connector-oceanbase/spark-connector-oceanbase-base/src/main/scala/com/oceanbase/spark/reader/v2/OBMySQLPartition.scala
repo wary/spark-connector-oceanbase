@@ -558,16 +558,13 @@ object OBMySQLPartition extends Logging {
   }
 
   /**
-   * Computes Spark partitions for unevenly primary key tables
+   * Computes Spark partitions for unevenly primary key tables.
    *
-   * @param keyTableInfo
-   *   Table information containing min/max IDs and row count
-   * @param partitionClause
-   *   Original partition clause (if exists)
-   * @param config
-   *   OceanBase configuration
-   * @return
-   *   Array of optimized MySQL partitions
+   * For numeric PKs, uses an equal-width bucket strategy: divides [min, max] into numPartitions *
+   * bucketMultiplier buckets and assigns them round-robin to partitions. This avoids the
+   * O(n/chunkSize) ORDER BY probing queries entirely.
+   *
+   * For non-numeric PKs (e.g. VARCHAR), falls back to the ORDER BY chunk probing approach.
    */
   private def computeUnevenlyWhereSparkPart(
       conn: Connection,
@@ -575,11 +572,95 @@ object OBMySQLPartition extends Logging {
       partitionClause: String,
       priKeyColumnName: String,
       config: OceanBaseConfig): Array[OBMySQLPartition] = {
-    // Return empty array if table has no rows
     if (keyTableInfo.count <= 0) {
       return Array.empty[OBMySQLPartition]
     }
-    // Calculate desired rows per partition based on configuration
+    // Only Integer/Long are safe to convert to Long without truncation.
+    // UNSIGNED BIGINT returns BigDecimal from JDBC and must fall back to ORDER BY probing.
+    (keyTableInfo.min, keyTableInfo.max) match {
+      case (minNum: java.lang.Long, maxNum: java.lang.Long) =>
+        computeEvenBucketPart(
+          keyTableInfo.count,
+          minNum,
+          maxNum,
+          partitionClause,
+          priKeyColumnName,
+          config)
+      case (minNum: java.lang.Integer, maxNum: java.lang.Integer) =>
+        computeEvenBucketPart(
+          keyTableInfo.count,
+          minNum.toLong,
+          maxNum.toLong,
+          partitionClause,
+          priKeyColumnName,
+          config)
+      case _ =>
+        computeOrderByChunkPart(conn, keyTableInfo, partitionClause, priKeyColumnName, config)
+    }
+  }
+
+  private def computeEvenBucketPart(
+      count: Long,
+      minVal: Long,
+      maxVal: Long,
+      partitionClause: String,
+      priKeyColumnName: String,
+      config: OceanBaseConfig): Array[OBMySQLPartition] = {
+    val chunkSize = config.getJdbcMaxRecordsPrePartition.orElse(calPartitionSize(count))
+    val numPartitions: Int = if (config.getJdbcNumPartitions.isPresent) {
+      config.getJdbcNumPartitions.get()
+    } else {
+      Math.ceil(count.toDouble / chunkSize).toInt.max(1)
+    }
+    if (numPartitions == 1) {
+      return Array(
+        OBMySQLPartition(
+          partitionClause = partitionClause,
+          limitOffsetClause = EMPTY_STRING,
+          whereClause = EMPTY_STRING,
+          idx = 0))
+    }
+    val multiplier = config.getJdbcBucketMultiplier
+    val numBuckets =
+      (numPartitions.toLong * multiplier).min(Int.MaxValue.toLong).toInt.max(numPartitions)
+    val bucketWidth =
+      Math.ceil((maxVal.toDouble - minVal.toDouble + 1.0) / numBuckets).toLong.max(1)
+
+    logInfo(
+      s"Using bucket-based partition: count=$count, numPartitions=$numPartitions, " +
+        s"numBuckets=$numBuckets, bucketWidth=$bucketWidth, range=[$minVal, $maxVal]")
+
+    (0 until numPartitions).map {
+      partIdx =>
+        val ranges = (partIdx.toLong until numBuckets by numPartitions).map {
+          b =>
+            val lo = minVal + b * bucketWidth
+            val hi =
+              if (b == numBuckets - 1) maxVal
+              else if (bucketWidth - 1 > maxVal - lo) maxVal
+              else lo + bucketWidth - 1
+            (lo, hi)
+        }
+        val whereClause = ranges
+          .map {
+            case (lo, hi) =>
+              s"($priKeyColumnName >= $lo AND $priKeyColumnName <= $hi)"
+          }
+          .mkString(" OR ")
+        OBMySQLPartition(
+          partitionClause = partitionClause,
+          limitOffsetClause = EMPTY_STRING,
+          whereClause = s"($whereClause)",
+          idx = partIdx)
+    }.toArray
+  }
+
+  private def computeOrderByChunkPart(
+      conn: Connection,
+      keyTableInfo: UnevenlyPriKeyTableInfo,
+      partitionClause: String,
+      priKeyColumnName: String,
+      config: OceanBaseConfig): Array[OBMySQLPartition] = {
     val desiredRowsPerPartition =
       config.getJdbcMaxRecordsPrePartition.orElse(calPartitionSize(keyTableInfo.count))
     var previousChunkEnd = keyTableInfo.min
