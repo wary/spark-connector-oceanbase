@@ -32,7 +32,7 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{ArrayType, BinaryType, BooleanType, ByteType, CharType, DataType, DateType, Decimal, DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType, Metadata, ShortType, StringType, StructType, TimestampType, VarcharType}
 import org.apache.spark.unsafe.types.UTF8String
 
-import java.sql.{PreparedStatement, ResultSet}
+import java.sql.{Connection, PreparedStatement, ResultSet}
 import java.util.Objects
 import java.util.concurrent.TimeUnit
 
@@ -52,10 +52,16 @@ class OBJdbcReader(
 
   private val getters: Array[OBValueGetter] = makeGetters(schema)
   private val mutableRow = new SpecificInternalRow(schema.fields.map(x => x.dataType))
-  private lazy val conn = OBJdbcUtils.getConnection(config)
-  private lazy val stmt: PreparedStatement =
-    conn.prepareStatement(buildQuerySql(), ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)
-  private lazy val rs: ResultSet = {
+  private var conn: Connection = _
+  private var stmt: PreparedStatement = _
+  private var rs: ResultSet = _
+
+  private def openResultSet(): Unit = {
+    conn = OBJdbcUtils.getConnection(config)
+    stmt = conn.prepareStatement(
+      buildQuerySql(),
+      ResultSet.TYPE_FORWARD_ONLY,
+      ResultSet.CONCUR_READ_ONLY)
     partition match {
       case part: OBMySQLPartition =>
         part.unevenlyWhereValue.zipWithIndex.foreach {
@@ -69,18 +75,26 @@ class OBJdbcReader(
     }
     stmt.setFetchSize(config.getJdbcFetchSize)
     stmt.setQueryTimeout(config.getJdbcQueryTimeout)
-    stmt.executeQuery()
+    rs = stmt.executeQuery()
+  }
+
+  private def currentResultSet: ResultSet = {
+    if (Objects.isNull(rs)) {
+      openResultSet()
+    }
+    rs
   }
 
   private var currentRecord: InternalRow = _
 
   override def next(): Boolean = {
-    val hasNext = rs.next()
+    val resultSet = currentResultSet
+    val hasNext = resultSet.next()
     if (hasNext) currentRecord = {
       var i = 0
       while (i < getters.length) {
-        getters(i)(rs, mutableRow, i)
-        if (rs.wasNull) mutableRow.setNullAt(i)
+        getters(i)(resultSet, mutableRow, i)
+        if (resultSet.wasNull) mutableRow.setNullAt(i)
         i = i + 1
       }
       mutableRow
@@ -91,14 +105,29 @@ class OBJdbcReader(
   override def get(): InternalRow = currentRecord
 
   override def close(): Unit = {
+    closeCurrentResources()
+  }
+
+  private def closeCurrentResources(): Unit = {
     if (Objects.nonNull(rs)) {
-      rs.close()
+      closeQuietly(rs.close())
+      rs = null
     }
     if (Objects.nonNull(stmt)) {
-      stmt.close()
+      closeQuietly(stmt.close())
+      stmt = null
     }
     if (Objects.nonNull(conn)) {
-      conn.close()
+      closeQuietly(conn.close())
+      conn = null
+    }
+  }
+
+  private def closeQuietly(close: => Unit): Unit = {
+    try {
+      close
+    } catch {
+      case exception: Exception => logWarning("Failed to close JDBC resource.", exception)
     }
   }
 
@@ -126,8 +155,8 @@ class OBJdbcReader(
                 case _ => quoted
               }
           }
-          if (projected.isEmpty) "1" else projected.mkString(",")
-        case _ => if (columns.isEmpty) "1" else columns.mkString(",")
+          if (projected.isEmpty) "1" else projected.mkString(", ")
+        case _ => if (columns.isEmpty) "1" else columns.mkString(", ")
       }
     }
 
@@ -216,10 +245,13 @@ class OBJdbcReader(
       case _ => ""
     }
 
-    s"""
-       |SELECT $hint $columnStr FROM ${config.getDbTable} $partitionClause
-       |$whereClause $getGroupByClause $getOrderByClause $finalLimitClause
-       |""".stripMargin
+    val sql =
+      s"""
+         |SELECT $hint $columnStr FROM ${config.getDbTable} $partitionClause
+         |$whereClause $getGroupByClause $getOrderByClause $finalLimitClause
+         |""".stripMargin
+    logDebug(s"OceanBase JDBC read SQL: $sql")
+    sql
   }
 
   /**
@@ -503,7 +535,7 @@ object OBJdbcReader extends SQLConfHelper {
     }
 
     // For nested arrays, we need to split carefully respecting brackets
-    val elements = if (elementType.isInstanceOf[ArrayType]) {
+    val elements = if (elementType.isInstanceOf[ArrayType] || elementType == StringType) {
       splitArrayElements(content)
     } else {
       content.split(",").map(_.trim)
@@ -519,7 +551,7 @@ object OBJdbcReader extends SQLConfHelper {
             case LongType => elem.toLong
             case FloatType => elem.toFloat
             case DoubleType => elem.toDouble
-            case StringType => UTF8String.fromString(elem)
+            case StringType => UTF8String.fromString(parseStringArrayElement(elem))
             case BooleanType => elem.toBoolean
             case ArrayType(innerType, _) =>
               // Recursively parse nested array
@@ -531,6 +563,64 @@ object OBJdbcReader extends SQLConfHelper {
     new GenericArrayData(convertedElements)
   }
 
+  private def parseStringArrayElement(elem: String): String = {
+    val trimmed = elem.trim
+    if (trimmed.length >= 2 && trimmed.head == '"' && trimmed.last == '"') {
+      unescapeJsonString(trimmed.substring(1, trimmed.length - 1))
+    } else if (trimmed.length >= 2 && trimmed.head == '\'' && trimmed.last == '\'') {
+      trimmed.substring(1, trimmed.length - 1)
+    } else {
+      trimmed
+    }
+  }
+
+  private def unescapeJsonString(value: String): String = {
+    val sb = new StringBuilder(value.length)
+    var i = 0
+    while (i < value.length) {
+      val c = value.charAt(i)
+      if (c == '\\' && i + 1 < value.length) {
+        value.charAt(i + 1) match {
+          case '"' =>
+            sb.append('"')
+            i += 2
+          case '\\' =>
+            sb.append('\\')
+            i += 2
+          case '/' =>
+            sb.append('/')
+            i += 2
+          case 'b' =>
+            sb.append('\b')
+            i += 2
+          case 'f' =>
+            sb.append('\f')
+            i += 2
+          case 'n' =>
+            sb.append('\n')
+            i += 2
+          case 'r' =>
+            sb.append('\r')
+            i += 2
+          case 't' =>
+            sb.append('\t')
+            i += 2
+          case 'u' if i + 5 < value.length =>
+            val codePoint = Integer.parseInt(value.substring(i + 2, i + 6), 16)
+            sb.append(codePoint.toChar)
+            i += 6
+          case other =>
+            sb.append(other)
+            i += 2
+        }
+      } else {
+        sb.append(c)
+        i += 1
+      }
+    }
+    sb.toString()
+  }
+
   /**
    * Split array elements respecting nested brackets. For example: "[1,2],[3,4]" => Array("[1,2]",
    * "[3,4]")
@@ -539,24 +629,41 @@ object OBJdbcReader extends SQLConfHelper {
     val elements = scala.collection.mutable.ArrayBuffer[String]()
     var currentElement = new StringBuilder()
     var bracketDepth = 0
+    var inSingleQuotes = false
+    var inDoubleQuotes = false
+    var escaped = false
 
     content.foreach {
       char =>
-        char match {
-          case '[' =>
-            bracketDepth += 1
-            currentElement.append(char)
-          case ']' =>
-            bracketDepth -= 1
-            currentElement.append(char)
-          case ',' if bracketDepth == 0 =>
-            // Only split at top-level commas
-            if (currentElement.nonEmpty) {
-              elements += currentElement.toString.trim
-              currentElement.clear()
-            }
-          case _ =>
-            currentElement.append(char)
+        if (escaped) {
+          currentElement.append(char)
+          escaped = false
+        } else {
+          char match {
+            case '\\' if inDoubleQuotes =>
+              currentElement.append(char)
+              escaped = true
+            case '"' if !inSingleQuotes =>
+              inDoubleQuotes = !inDoubleQuotes
+              currentElement.append(char)
+            case '\'' if !inDoubleQuotes =>
+              inSingleQuotes = !inSingleQuotes
+              currentElement.append(char)
+            case '[' if !inSingleQuotes && !inDoubleQuotes =>
+              bracketDepth += 1
+              currentElement.append(char)
+            case ']' if !inSingleQuotes && !inDoubleQuotes =>
+              bracketDepth -= 1
+              currentElement.append(char)
+            case ',' if bracketDepth == 0 && !inSingleQuotes && !inDoubleQuotes =>
+              // Only split at top-level commas
+              if (currentElement.nonEmpty) {
+                elements += currentElement.toString.trim
+                currentElement.clear()
+              }
+            case _ =>
+              currentElement.append(char)
+          }
         }
     }
 
